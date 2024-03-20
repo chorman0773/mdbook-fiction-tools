@@ -2,7 +2,7 @@ use std::io;
 
 use mdbook::errors::Error as MdError;
 use mdbook::preprocess::{CmdPreprocessor, Preprocessor};
-use mdbook_add_copyright::AddCopyrightPreprocessor;
+use mdbook_fiction_tools::add_copyright::AddCopyrightPreprocessor;
 
 use semver::{Version, VersionReq};
 

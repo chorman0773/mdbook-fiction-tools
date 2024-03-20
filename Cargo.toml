@@ -1,8 +1,9 @@
-[workspace]
-members = ["mdbook-add-copyright", "mdbook-epub-fancy"]
-resolver = "2"
+[package]
+name = "mdbook-fiction-tools"
+version = "0.1.0"
+edition = "2021"
 
-[workspace.dependencies]
+[dependencies]
 mdbook = "0.4.37"
 pulldown-cmark = "0.9.3"
 pulldown-cmark-to-cmark = "11.2.0"
@@ -11,3 +12,5 @@ toml = "0.8.10"
 serde = "1.0.197"
 serde_derive = "1.0.197"
 semver = "1.0.22"
+xml-rs = "0.8"
+zip = "0.6.6"
