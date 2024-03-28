@@ -34,7 +34,7 @@ impl NavTree {
             let entry = last.subnodes.last_mut().unwrap();
 
             match &entry.heading {
-                NavHeading::Chapter(_, _) | NavHeading::Heading(_) => {
+                NavHeading::Chapter(_, _) | NavHeading::Heading(_) | NavHeading::UnboundChapter => {
                     stack.push(entry.children.get_or_insert_with(Self::new));
                 }
                 NavHeading::End => {
@@ -73,6 +73,7 @@ impl NavTree {
                     w.write(XmlEvent::characters(head))?;
                     w.write(XmlEvent::end_element())?;
                 }
+                NavHeading::UnboundChapter => continue,
             }
             if let Some(children) = &node.children {
                 children.write_ol(w)?;
@@ -92,6 +93,7 @@ pub struct NavNode {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum NavHeading {
     Chapter(String, PathBuf),
+    UnboundChapter,
     Heading(String),
     End,
 }

@@ -108,9 +108,9 @@ where
                     *outstanding.last_mut().unwrap() = true;
                 }
                 BookItem::Chapter(c) => {
+                    outstanding.push(false);
                     if let Some(file) = &c.path {
                         use core::fmt::Write as _;
-                        outstanding.push(false);
 
                         let mut file = file.clone();
                         file.set_extension("xhtml");
@@ -174,7 +174,7 @@ where
                             .map_err(xhtml::xml_to_io_error)?; // </html>
                     } else {
                         nav_tree.push(NavNode {
-                            heading: NavHeading::Heading(c.name.clone() + " (Draft Chapter)"),
+                            heading: NavHeading::UnboundChapter,
                             children: None,
                         });
                     }
