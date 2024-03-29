@@ -88,7 +88,7 @@ uuid = "<uuid>"
 # Specifies a unique identifier that is an Object Identifier
 oid = "<oid>
 # Specifies a unique identifier that is an ISBN (ISBN 10 or ISBN 13)
-isbn = "<isbn>
+isbn = "<isbn>"
 
 # Allows specifying the unique identifier for specific part or chapter outputs
 # Exactly one of `uuid`, `oid`, or `isbn` may be specified (otherwise the table must be omitted)
@@ -100,7 +100,7 @@ uuid = "<uuid>"
 # Specifies a unique identifier that is an Object Identifier
 oid = "<oid>
 # Specifies a unique identifier that is an ISBN (ISBN 10 or ISBN 13)
-isbn = "<isbn>
+isbn = "<isbn>"
 
 
 # Advanced configuration option - changes the name of the epub output files
@@ -129,4 +129,21 @@ These types are computed as follows:
   4. Each upper case letter is replaced with the corresponding lower case letter.
 
 
+The computation for output ids is considered stable, and will not be changed between major versions of the project.
+
 Note that currently mdbook does not have support for heading extension support in `SUMMARY.md` specifically, so on non-aware renderers (including the builtin `html` backend), heading extension specifiers will be displayed verbatim. 
+
+### Future Work
+
+Missing features:
+* Support per-chapter epub outputs
+* Support save-temps = true
+* Remove heading extension specifiers from the `nav` document
+* Allow configuring whether the `nav` document should appear in the spine (and thus be displayed)
+* Check when markdown files use features that require manifest attributes to be set.
+
+Potential Future Directions:
+* Support basic styling via built-in or user-specified css
+* Support additional OCF container format options, like signatures and encryption.
+* Support additional epub metadata, such as subject information
+* Support math equations via MathML
