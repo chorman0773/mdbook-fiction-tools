@@ -86,7 +86,7 @@ always-include = ["list/of/files.md"]
 # Specifies a unique identifier that is a Universally Unique Identifier (https://datatracker.ietf.org/doc/html/rfc4122)
 uuid = "<uuid>"
 # Specifies a unique identifier that is an Object Identifier
-oid = "<oid>
+oid = "<oid>"
 # Specifies a unique identifier that is an ISBN (ISBN 10 or ISBN 13)
 isbn = "<isbn>"
 
@@ -98,7 +98,7 @@ isbn = "<isbn>"
 # Specifies a unique identifier that is a Universally Unique Identifier (https://datatracker.ietf.org/doc/html/rfc4122)
 uuid = "<uuid>"
 # Specifies a unique identifier that is an Object Identifier
-oid = "<oid>
+oid = "<oid>"
 # Specifies a unique identifier that is an ISBN (ISBN 10 or ISBN 13)
 isbn = "<isbn>"
 
