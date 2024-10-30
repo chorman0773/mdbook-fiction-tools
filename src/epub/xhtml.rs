@@ -1,6 +1,12 @@
 use pulldown_cmark::{CowStr, Event as MdEvent, HeadingLevel, Parser, Tag as MdTag};
-use std::borrow::Cow;
-use xml::{writer::EventWriter, writer::XmlEvent};
+use std::{
+    borrow::Cow,
+    io::{self, Cursor},
+};
+use xml::{
+    name::{Name, OwnedName},
+    writer::{EventWriter, XmlEvent},
+};
 
 pub fn xml_to_io_error(e: xml::writer::Error) -> std::io::Error {
     match e {
@@ -106,7 +112,7 @@ pub fn write_md<W: std::io::Write>(
                     }
                 }
             },
-            MdEvent::End(_) => writer.write(XmlEvent::end_element())?,
+            MdEvent::End(event) => writer.write(XmlEvent::end_element())?,
             MdEvent::Text(text) => {
                 writer.write(XmlEvent::characters(&text))?;
             }
@@ -115,7 +121,53 @@ pub fn write_md<W: std::io::Write>(
                 writer.write(XmlEvent::characters(&text))?;
                 writer.write(XmlEvent::end_element())?;
             }
-            MdEvent::Html(_) => todo!("convert inline html"),
+            MdEvent::Html(elem) => {
+                if let Some(suffix) = elem.strip_prefix("</") {
+                    let elem = suffix
+                        .strip_suffix(">")
+                        .ok_or_else(|| {
+                            io::Error::new(io::ErrorKind::InvalidData, "Not an html element")
+                        })?
+                        .trim();
+
+                    writer.write(XmlEvent::end_element().name(elem))?;
+                } else {
+                    let mut inner = xml::reader::EventReader::new(Cursor::new(elem.as_bytes()));
+                    inner
+                        .next()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?; // There's a `StartElement`
+
+                    match inner
+                        .next()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    {
+                        xml::reader::XmlEvent::StartElement {
+                            name, attributes, ..
+                        } => {
+                            let mut event = XmlEvent::start_element(name.borrow());
+                            for attr in &attributes {
+                                event = event.attr(attr.name.borrow(), &attr.value);
+                            }
+
+                            writer.write(event)?;
+                        }
+                        xml::reader::XmlEvent::CData(string) => {
+                            writer.write(XmlEvent::cdata(&string))?;
+                        }
+                        xml::reader::XmlEvent::Comment(string) => {
+                            writer.write(XmlEvent::comment(&string))?;
+                        }
+                        e => panic!("Cannot process {e:?}"),
+                    }
+
+                    match inner.next() {
+                        Ok(xml::reader::XmlEvent::EndElement { name }) => {
+                            writer.write(XmlEvent::end_element().name(name.borrow()))?;
+                        }
+                        _ => {}
+                    }
+                }
+            }
             MdEvent::FootnoteReference(a) => {
                 let mut st = String::from("#footnote-");
                 st.push_str(&a);
