@@ -144,6 +144,10 @@ Missing features:
 
 Potential Future Directions:
 * Support basic styling via built-in or user-specified css
-* Support additional OCF container format options, like signatures and encryption.
+* Support additional OCF container format options, like signatures.
 * Support additional epub metadata, such as subject information
 * Support math equations via MathML
+
+Non-planned features:
+* encryption and epub rights management: Fork button is top right of your screen. PRs not welcome. \
+ Alternatively, add via a secondary tool if you *really* want to.
