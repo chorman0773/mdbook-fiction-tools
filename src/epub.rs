@@ -30,6 +30,8 @@ pub mod config;
 pub mod info;
 pub mod nav;
 pub mod package;
+#[cfg(feature = "epub-signatures")]
+pub mod signature;
 pub mod style;
 pub mod xhtml;
 

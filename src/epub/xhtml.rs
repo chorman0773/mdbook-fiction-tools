@@ -191,7 +191,7 @@ pub fn write_md<W: std::io::Write>(
                 writer.write(XmlEvent::start_element("hr"))?;
                 writer.write(XmlEvent::end_element())?;
             }
-            MdEvent::TaskListMarker(_) => todo!("checkbox"),
+            MdEvent::TaskListMarker(val) => {}
         }
     }
 

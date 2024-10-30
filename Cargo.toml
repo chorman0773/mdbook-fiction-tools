@@ -17,3 +17,7 @@ zip = "0.6.6"
 time = { version = "0.3.34", features = ["formatting"] }
 uuid = { version = "1.8.0", features = ["v7", "serde"] }
 with_builtin_macros = "0.0.3"
+ring = { version = "0.17.8", optional = true }
+
+[features]
+epub-signatures = ["dep:ring"]
