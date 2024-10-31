@@ -147,6 +147,7 @@ Potential Future Directions:
 * Support additional OCF container format options, like signatures.
 * Support additional epub metadata, such as subject information
 * Support math equations via MathML
+* Other output formats, such as pdf.
 
 Non-planned features:
 * encryption and epub rights management: Fork button is top right of your screen. PRs not welcome. \
