@@ -1,4 +1,9 @@
-use std::iter::FusedIterator;
+use std::{
+    collections::{HashMap, HashSet},
+    iter::FusedIterator,
+    ops::Deref,
+    path::PathBuf,
+};
 
 use serde_derive::Deserialize;
 
@@ -183,3 +188,41 @@ impl<'a, T> DoubleEndedIterator for IterMut<'a, T> {
 
 impl<'a, T> FusedIterator for IterMut<'a, T> {}
 impl<'a, T> ExactSizeIterator for IterMut<'a, T> {}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OutputType {
+    Chapter,
+    Part,
+    Full,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "kebab-case", default)]
+pub struct SharedConfig {
+    pub output: Option<SerList<OutputType>>,
+    pub always_include: HashSet<PathBuf>,
+    pub save_temps: bool,
+    pub output_files: OutputFileSpec,
+}
+
+const FULL_OUTPUT: SerList<OutputType> = SerList::SingleItem(OutputType::Full);
+
+impl SharedConfig {
+    pub fn outputs(&self) -> impl Iterator<Item = &'_ OutputType> + '_ {
+        self.output.as_ref().unwrap_or(&FULL_OUTPUT).iter()
+    }
+}
+
+pub trait Config: Default + Deref<Target = SharedConfig> {}
+
+impl<C: Default + Deref<Target = SharedConfig>> Config for C {}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "kebab-case", default)]
+pub struct OutputFileSpec {
+    #[serde(default)]
+    pub full: Option<PathBuf>,
+    #[serde(flatten)]
+    pub individual_files: HashMap<String, PathBuf>,
+}

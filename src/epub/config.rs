@@ -1,21 +1,28 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::Deref,
     path::PathBuf,
 };
 
 use serde_derive::Deserialize;
 use uuid::Uuid;
 
-use crate::config::SerList;
+use crate::config::{SerList, SharedConfig};
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct EpubConfig {
-    pub output: Option<SerList<EpubOutputType>>,
-    pub always_include: HashSet<PathBuf>,
-    pub save_temps: bool,
-    pub output_files: OutputFileSpec,
+    #[serde(flatten)]
+    pub shared: SharedConfig,
     pub file_ids: EpubFileIds,
+}
+
+impl Deref for EpubConfig {
+    type Target = SharedConfig;
+
+    fn deref(&self) -> &Self::Target {
+        &self.shared
+    }
 }
 
 #[derive(Deserialize, Default)]
@@ -24,22 +31,6 @@ pub struct EpubFileIds {
     pub full: Option<EpubPackageId>,
     #[serde(flatten)]
     pub individual_files: HashMap<String, EpubPackageId>,
-}
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "kebab-case", default)]
-pub struct OutputFileSpec {
-    #[serde(default)]
-    pub full: Option<PathBuf>,
-    #[serde(flatten)]
-    pub individual_files: HashMap<String, PathBuf>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum EpubOutputType {
-    Chapter,
-    Part,
-    Full,
 }
 
 #[derive(Deserialize, Clone, Debug, Hash, PartialEq, Eq)]

@@ -41,7 +41,7 @@ pub const NS_EPUB_URI: &str = "http://www.idpf.org/2007/ops";
 pub fn write_epub<
     'a,
     W: std::io::Write + std::io::Seek,
-    I: IntoIterator<Item = &'a BookItem> + Clone,
+    I: IntoIterator<Item = &'a BookItem>,
     E: IntoIterator,
 >(
     writer: W,
@@ -85,7 +85,7 @@ where
     manifest.push(nav_item);
 
     let (mut nav_tree, outstanding) = visit_chapters(
-        chapters.clone(),
+        chapters,
         |item, (nav_tree, outstanding)| {
             match item {
                 BookItem::Separator => {

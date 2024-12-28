@@ -129,7 +129,7 @@ These types are computed as follows:
   4. Each upper case letter is replaced with the corresponding lower case letter.
 
 
-The computation for output ids is considered stable, and will not be changed between major versions of the project.
+The computation for output ids is considered stable, and will not be changed within a major version of the project.
 
 Note that currently mdbook does not have support for heading extension support in `SUMMARY.md` specifically, so on non-aware renderers (including the builtin `html` backend), heading extension specifiers will be displayed verbatim. 
 
