@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde_derive::Deserialize;
+use uuid::Uuid;
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -218,11 +219,35 @@ pub trait Config: Default + Deref<Target = SharedConfig> {}
 
 impl<C: Default + Deref<Target = SharedConfig>> Config for C {}
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub enum OutputFile {
+    Enabled(bool),
+    Path(PathBuf),
+}
+
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct OutputFileSpec {
     #[serde(default)]
-    pub full: Option<PathBuf>,
+    pub full: Option<OutputFile>,
     #[serde(flatten)]
-    pub individual_files: HashMap<String, PathBuf>,
+    pub individual_files: HashMap<String, OutputFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case", default)]
+pub struct FileIds<Id> {
+    pub full: Option<Id>,
+    #[serde(flatten)]
+    pub individual_files: HashMap<String, Id>,
+}
+
+impl<Id> Default for FileIds<Id> {
+    fn default() -> Self {
+        Self {
+            full: None,
+            individual_files: HashMap::new(),
+        }
+    }
 }

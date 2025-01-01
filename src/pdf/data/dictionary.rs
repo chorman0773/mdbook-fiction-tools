@@ -1,10 +1,13 @@
 use std::{
     hash::Hash,
+    io,
     iter::FusedIterator,
     ops::{Deref, DerefMut},
 };
 
 use indexmap::IndexMap;
+
+use crate::pdf::file::PdfWriter;
 
 use super::{Name, Object};
 
@@ -108,5 +111,16 @@ impl Dictionary {
 
     pub fn iter(&self) -> Iter {
         Iter(self.0.iter())
+    }
+
+    pub fn write<W: io::Write>(&self, w: &mut PdfWriter<W>) -> io::Result<()> {
+        use io::Write as _;
+        write!(w, "<<")?;
+        for (k, v) in self {
+            write!(w, "{k} ")?;
+            v.write(w)?;
+            writeln!(w)?;
+        }
+        write!(w, ">>")
     }
 }

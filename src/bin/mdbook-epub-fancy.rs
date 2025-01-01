@@ -1,15 +1,13 @@
-use mdbook::{renderer::RenderContext, BookItem};
+use mdbook::renderer::RenderContext;
 use mdbook_fiction_tools::{
-    config::SerList,
     epub::{
-        config::{EpubConfig, EpubPackageId},
+        config::{EpubConfig, PackageId},
         info::EpubFileInfo,
         write_epub,
     },
-    gen_collected_output,
-    helpers::{self, name_to_id},
+    gen_collected_output, helpers, Output,
 };
-use std::{collections::HashMap, ffi::OsStr, fs, io};
+use std::{fs, io};
 use uuid::Uuid;
 
 fn main() -> io::Result<()> {
@@ -24,7 +22,7 @@ fn main() -> io::Result<()> {
     gen_collected_output::<EpubConfig>(
         &ctx,
         "epub-fancy",
-        |path, title, chapters, config, extra_files| {
+        |path, title, chapters, config, extra_files, output| {
             let path = {
                 let mut dest = dest.clone();
                 dest.push(path);
@@ -33,15 +31,17 @@ fn main() -> io::Result<()> {
             };
             let file = fs::File::create(path)?;
 
+            let id = match output {
+                Output::Full => config.file_ids.full.as_ref().cloned(),
+                Output::Part(id) => config.file_ids.individual_files.get(id).cloned(),
+                _ => None,
+            };
+
             let info = EpubFileInfo {
                 title: title.to_string(),
-                ident: config
-                    .file_ids
-                    .full
-                    .clone()
-                    .unwrap_or_else(|| EpubPackageId::Uuid {
-                        uuid: Uuid::now_v7(),
-                    }),
+                ident: id.unwrap_or_else(|| PackageId::Uuid {
+                    uuid: Uuid::now_v7(),
+                }),
                 lang: ctx
                     .config
                     .book

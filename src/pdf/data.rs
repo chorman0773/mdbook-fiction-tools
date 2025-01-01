@@ -1,6 +1,7 @@
 use std::{
     cmp::{Eq, Ord, PartialEq, PartialOrd},
     hash::Hash,
+    io,
     ops::{Deref, DerefMut},
     rc::Rc,
 };
@@ -9,8 +10,16 @@ pub mod dictionary;
 
 pub use dictionary::Dictionary;
 
+use super::file::PdfWriter;
+
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Real(f32);
+
+impl core::fmt::Display for Real {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl PartialEq for Real {
     fn eq(&self, other: &Self) -> bool {
@@ -43,17 +52,100 @@ pub enum Object {
     Bool(bool),
     Integer(u32),
     Real(Real),
-    String(String),
     Name(Name),
+    Null,
+    String(String),
+    CharString(String),
     Array(Vec<Object>),
     Dictionary(Dictionary),
-    Null,
+
     Stream(Box<StreamBody>),
     Indirect(Rc<Object>),
 }
 
+impl Object {
+    pub fn write<W: io::Write>(&self, w: &mut PdfWriter<W>) -> io::Result<()> {
+        use io::Write as _;
+        match self {
+            Object::Bool(val) => write!(w, "{val}"),
+            Object::Integer(val) => write!(w, "{val}"),
+            Object::Real(val) => write!(w, "{val}"),
+            Object::Name(val) => write!(w, "{val}"),
+            Object::Null => write!(w, "null"),
+            Object::String(s) => {
+                let mut last_match_end = 0;
+                for (idx, m) in s.match_indices(&['\n', '\r', '(', ')', '\\']) {
+                    let substr = &s[last_match_end..idx];
+                    assert_eq!(m.len(), 1);
+                    last_match_end = idx + 1;
+                    write!(w, "{substr}")?;
+                    let b = m.as_bytes()[0];
+                    write!(w, "#{b:03o}")?;
+                }
+                let substr = &s[last_match_end..];
+                write!(w, "{substr}")
+            }
+            Object::CharString(s) => {
+                let mut last_match_end = 0;
+                w.write_all(b"\xEF\xBB\xBF")?;
+                for (idx, m) in s.match_indices(&['\n', '\r', '(', ')', '\\']) {
+                    let substr = &s[last_match_end..idx];
+                    assert_eq!(m.len(), 1);
+                    last_match_end = idx + 1;
+                    write!(w, "{substr}")?;
+                    let b = m.as_bytes()[0];
+                    write!(w, "#{b:03o}")?;
+                }
+                let substr = &s[last_match_end..];
+                write!(w, "{substr}")
+            }
+            Object::Array(vec) => {
+                let mut sep = "";
+                write!(w, "[")?;
+
+                for obj in vec {
+                    write!(w, "{sep}")?;
+                    sep = " ";
+                    obj.write(w)?;
+                }
+                write!(w, "]")
+            }
+            Object::Dictionary(dictionary) => dictionary.write(w),
+            Object::Stream(stream_body) => {
+                stream_body.extra_attributes.write(w)?;
+                write!(w, "stream")?;
+                w.write_all(&stream_body.data)?;
+                write!(w, "endstream")
+            }
+            Object::Indirect(object) => w.write_indirect_object(object),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq, Default, PartialOrd, Ord)]
 pub struct Name(String);
+
+impl core::fmt::Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("/")?;
+
+        let mut last_match_end = 0;
+
+        for (idx, m) in self.match_indices(&[
+            '\x00', '\x09', '\n', '\r', '\x0C', ' ', '(', ')', '<', '>', '[', ']', '{', '}', '/',
+            '%', '#',
+        ]) {
+            let substr = &self[last_match_end..idx];
+            assert_eq!(m.len(), 1);
+            last_match_end = idx + 1;
+            f.write_str(substr)?;
+            let b = m.as_bytes()[0];
+            write!(f, "#{b:02X}")?;
+        }
+        let substr = &self[last_match_end..];
+        f.write_str(substr)
+    }
+}
 
 impl Name {
     pub const fn new() -> Name {

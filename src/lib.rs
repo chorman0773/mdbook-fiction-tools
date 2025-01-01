@@ -1,4 +1,4 @@
-use config::{Config, OutputType, SerList};
+use config::{Config, OutputFile, OutputType, SerList};
 use helpers::name_to_id;
 use mdbook::{
     book::{Book, Chapter},
@@ -23,6 +23,7 @@ pub mod helpers;
 pub mod pdf;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Output {
     Full,
     Part(String),
@@ -39,6 +40,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
         &mut dyn Iterator<Item = &'_ BookItem>,
         &C,
         &[PathBuf],
+        &Output,
     ) -> io::Result<()>,
 ) -> io::Result<()> {
     let config: C = ctx
@@ -116,6 +118,9 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                     }
                 }
 
+                if let Some(part) = cur_part.take() {
+                    chapter_list.insert(Output::Part(part), cur_part_chapters);
+                }
                 chapter_list.insert(Output::ByPartHead, always_include_head);
                 chapter_list.insert(Output::ByPartTail, always_include_tail);
             }
@@ -157,19 +162,22 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                             let id = helpers::name_to_id(title);
 
                             let path = match config.output_files.individual_files.get(&id) {
-                                Some(path) => Path::new(path),
-                                None => Path::new(&id),
+                                Some(OutputFile::Path(path)) => Path::new(path),
+                                None | Some(OutputFile::Enabled(true)) => Path::new(&id),
+                                Some(OutputFile::Enabled(false)) => continue,
                             };
 
                             let part = Output::Part(id.clone());
 
-                            let mut iter = chapter_list[&Output::ByPartHead]
-                                .iter()
+                            let mut iter = chapter_list
+                                .get(&Output::ByPartHead)
+                                .into_iter()
+                                .flatten()
                                 .chain(&chapter_list[&part])
-                                .chain(&chapter_list[&Output::ByPartTail])
+                                .chain(chapter_list.get(&Output::ByPartTail).into_iter().flatten())
                                 .copied();
 
-                            visitor(path, title, &mut iter, &config, &extra_files)?;
+                            visitor(path, title, &mut iter, &config, &extra_files, &part)?;
                         }
                         _ => {}
                     }
@@ -179,8 +187,11 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                 let title_id = ctx.config.book.title.as_deref().map(helpers::name_to_id);
 
                 let path = match &config.output_files.full {
-                    Some(name) => Path::new(name),
-                    None => Path::new(title_id.as_deref().unwrap_or("book")),
+                    Some(OutputFile::Path(name)) => Path::new(name),
+                    None | Some(OutputFile::Enabled(true)) => {
+                        Path::new(title_id.as_deref().unwrap_or("book"))
+                    }
+                    Some(OutputFile::Enabled(false)) => return Ok(()),
                 };
 
                 visitor(
@@ -189,6 +200,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                     &mut chapter_list[&Output::Full].iter().copied(),
                     &config,
                     &extra_files,
+                    &Output::Full,
                 )?;
             }
         }

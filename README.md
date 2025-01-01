@@ -113,6 +113,13 @@ full = "full.epub"
 # The key for a given part or chapter is derived from the part/chapter title
 # The default is the key with `.epub` appended
 '<output-id>'="<output-id>.epub"
+
+# Disables `output-id`. Also valid for `full`.
+# Can be used to remove parts or chapters that are erroneously included
+'<output-id>'=false
+
+# Explicitly uses the inferred path for `<output-id>`. Also valid for `full`
+'<output-id>'=true
 ```
 
 ### Output Ids

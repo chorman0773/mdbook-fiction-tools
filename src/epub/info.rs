@@ -1,7 +1,7 @@
 use time::format_description::well_known::Rfc3339;
 use xml::{name::Name, writer::XmlEvent, EventWriter};
 
-use super::config::EpubPackageId;
+use super::config::PackageId;
 
 pub const NS_CONTAINER_URI: &str = "urn:oasis:names:tc:opendocument:xmlns:container";
 
@@ -12,7 +12,7 @@ pub const EPUB_UNIQUE_IDENTIFIER_ID: &str = "primary-ident";
 
 pub struct EpubFileInfo {
     pub title: String,
-    pub ident: EpubPackageId,
+    pub ident: PackageId,
     pub lang: String,
     pub creators: Vec<String>,
 }

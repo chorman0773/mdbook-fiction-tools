@@ -3,7 +3,7 @@ use std::{borrow::Cow, path::PathBuf};
 use xml::{namespace::NS_NO_PREFIX, writer::XmlEvent, EventWriter};
 
 use super::{
-    config::EpubPackageId,
+    config::PackageId,
     info::{EpubFileInfo, EPUB_UNIQUE_IDENTIFIER_ID},
 };
 
