@@ -3,6 +3,4 @@ authors = ["Connor Horman"]
 language = "en"
 multilingual = false
 src = "src"
-title = "inline-html"
-
-[output.epub-fancy]
+title = "Basic Test"

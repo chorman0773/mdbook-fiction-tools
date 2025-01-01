@@ -1,11 +1,16 @@
-use pulldown_cmark::{CowStr, Event as MdEvent, HeadingLevel, Parser, Tag as MdTag};
+use pulldown_cmark::{CowStr, Event as MdEvent, Parser, Tag as MdTag};
 use std::{
     borrow::Cow,
     io::{self, Cursor},
 };
 use xml::{
     name::{Name, OwnedName},
+    namespace::NS_NO_PREFIX,
     writer::{EventWriter, XmlEvent},
+};
+
+use crate::bookir::{
+    Book, BookChapter, HeadingLevel, InlineXhtml, Link, ListStyle, RichText, XmlNode,
 };
 
 pub fn xml_to_io_error(e: xml::writer::Error) -> std::io::Error {
@@ -30,182 +35,215 @@ pub const NS_XHTML_URI: &str = "http://www.w3.org/1999/xhtml";
 
 pub const XHTML_MEDIA: &str = "application/xhtml+xml";
 
-pub fn write_md<W: std::io::Write>(
-    parse: &mut Parser,
+pub fn write_rich_node<W: std::io::Write>(
+    node: &RichText,
     writer: &mut EventWriter<W>,
 ) -> xml::writer::Result<()> {
-    writer.write(XmlEvent::start_element("body"))?;
-
-    while let Some(event) = parse.next() {
-        match event {
-            MdEvent::Start(tag) => match tag {
-                MdTag::Paragraph => writer.write(XmlEvent::start_element("p"))?,
-                MdTag::Heading(level, id, _) => {
-                    let name = match level {
-                        HeadingLevel::H1 => "h1",
-                        HeadingLevel::H2 => "h2",
-                        HeadingLevel::H3 => "h3",
-                        HeadingLevel::H4 => "h4",
-                        HeadingLevel::H5 => "h5",
-                        HeadingLevel::H6 => "h6",
-                    };
-                    let mut builder = XmlEvent::start_element(name);
-                    if let Some(id) = id {
-                        builder = builder.attr("id", id);
-                    }
-
-                    writer.write(builder)?;
+    match node {
+        RichText::RawText(cow_str) => writer.write(XmlEvent::characters(cow_str)),
+        RichText::Xhtml(inline_xhtml) => match inline_xhtml {
+            InlineXhtml::CData(cdata) => writer.write(XmlEvent::cdata(cdata)),
+            InlineXhtml::Comment(comment) => writer.write(XmlEvent::comment(comment)),
+            InlineXhtml::Node(XmlNode::Block(elem_event, content)) => {
+                writer.write(
+                    elem_event
+                        .as_writer_event()
+                        .expect("Expected a StartElementEvent"),
+                )?;
+                for elem in content {
+                    write_rich_node(elem, writer)?;
                 }
-                MdTag::BlockQuote => {
-                    writer.write(XmlEvent::start_element("blockquote"))?;
-                }
-                MdTag::CodeBlock(_) => {
-                    writer.write(XmlEvent::start_element("div").attr("class", "code"))?;
-                }
-                MdTag::List(None) => {
-                    writer.write(XmlEvent::start_element("ul"))?;
-                }
-                MdTag::List(Some(base)) => {
-                    let base = base.to_string();
-
-                    writer.write(XmlEvent::start_element("ol").attr("start", &base))?;
-                }
-                MdTag::Item => writer.write(XmlEvent::start_element("li"))?,
-                MdTag::FootnoteDefinition(id) => {
-                    let mut st = String::from("footnote-");
-                    st.push_str(&id);
-                    writer.write(XmlEvent::start_element("div").attr("id", &st))?;
-                }
-                MdTag::Table(_) => {
-                    writer.write(XmlEvent::start_element("table"))?;
-                }
-                MdTag::TableHead => {
-                    writer.write(XmlEvent::start_element("thead"))?;
-                }
-                MdTag::TableRow => {
-                    writer.write(XmlEvent::start_element("tr"))?;
-                }
-                MdTag::TableCell => {
-                    writer.write(XmlEvent::start_element("td"))?;
-                }
-                MdTag::Emphasis => writer.write(XmlEvent::start_element("i"))?,
-                MdTag::Strong => writer.write(XmlEvent::start_element("b"))?,
-                MdTag::Strikethrough => writer.write(XmlEvent::start_element("s"))?,
-                MdTag::Link(_, dest, _) => {
-                    let dest = if !dest.contains(":") {
-                        if let Some(dest) = dest.strip_suffix(".md") {
-                            let mut st = dest.to_string();
-                            st.push_str(".xhtml");
-                            Cow::Owned(st)
-                        } else {
-                            Cow::Borrowed(&*dest)
-                        }
-                    } else {
-                        Cow::Borrowed(&*dest)
-                    };
-
-                    writer.write(XmlEvent::start_element("a").attr("href", &dest))?;
-                }
-                MdTag::Image(_, dest, title) => {
-                    let (alt_text, end) = match parse.next().unwrap() {
-                        MdEvent::Text(text) => (text, false),
-                        MdEvent::End(_) => (CowStr::Borrowed("no-alt"), true),
-                        _ => panic!("Can only include text in an image tag"),
-                    };
-                    writer.write(
-                        XmlEvent::start_element("img")
-                            .attr("src", &dest)
-                            .attr("alt", &alt_text),
-                    )?;
-
-                    if end {
-                        writer.write(XmlEvent::end_element())?;
-                    }
-                }
-            },
-            MdEvent::End(event) => writer.write(XmlEvent::end_element())?,
-            MdEvent::Text(text) => {
-                writer.write(XmlEvent::characters(&text))?;
+                writer.write(XmlEvent::end_element())
             }
-            MdEvent::Code(text) => {
-                writer.write(XmlEvent::start_element("span").attr("class", "code"))?;
-                writer.write(XmlEvent::characters(&text))?;
+            InlineXhtml::Node(XmlNode::Inline(elem_event)) => {
+                writer.write(
+                    elem_event
+                        .as_writer_event()
+                        .expect("Expected a StartElementEvent"),
+                )?;
+                writer.write(XmlEvent::end_element())
+            }
+        },
+        RichText::Stylised(attributes, elems) => {
+            let mut steps = 0;
+
+            if attributes.strikethrough {
+                steps += 1;
+                writer.write(XmlEvent::start_element("s"))?;
+            }
+            if attributes.underline {
+                steps += 1;
+                writer.write(XmlEvent::start_element("u"))?;
+            }
+            if attributes.bold {
+                steps += 1;
+                writer.write(XmlEvent::start_element("b"))?;
+            }
+            if attributes.italics {
+                steps += 1;
+                writer.write(XmlEvent::start_element("i"))?;
+            }
+
+            for elem in elems {
+                write_rich_node(elem, writer)?;
+            }
+
+            for _ in 0..steps {
                 writer.write(XmlEvent::end_element())?;
             }
-            MdEvent::Html(elem) => {
-                if let Some(suffix) = elem.strip_prefix("</") {
-                    let elem = suffix
-                        .strip_suffix(">")
-                        .ok_or_else(|| {
-                            io::Error::new(io::ErrorKind::InvalidData, "Not an html element")
-                        })?
-                        .trim();
-
-                    writer.write(XmlEvent::end_element().name(elem))?;
-                } else if let Some(suffix) = elem.strip_prefix("<!--") {
+            Ok(())
+        }
+        RichText::Paragraph(elems) => {
+            writer.write(XmlEvent::start_element("p"))?;
+            for elem in elems {
+                write_rich_node(elem, writer)?;
+            }
+            writer.write(XmlEvent::end_element())
+        }
+        RichText::InlineCode(code) => {
+            writer.write(XmlEvent::start_element("code"))?;
+            writer.write(XmlEvent::cdata(code))?;
+            writer.write(XmlEvent::end_element())
+        }
+        RichText::CodeBlock(code) => {
+            writer.write(
+                XmlEvent::start_element("div")
+                    .attr("style", "font-family:monospace;background-color: #c9c9c9;"),
+            )?;
+            writer.write(XmlEvent::cdata(&code.content))?;
+            writer.write(XmlEvent::end_element())
+        }
+        RichText::InternalLink(link) => match link {
+            Link::Text {
+                title: _,
+                elems,
+                dest_url,
+            } => {
+                let link = if let Some(prefix) = dest_url.strip_suffix(".md") {
+                    CowStr::from(format!("{prefix}.xhtml"))
                 } else {
-                    let mut inner = xml::reader::EventReader::new(Cursor::new(elem.as_bytes()));
-                    inner
-                        .next()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?; // There's a `StartElement`
+                    dest_url.clone()
+                };
 
-                    match inner
-                        .next()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                    {
-                        xml::reader::XmlEvent::StartElement {
-                            name, attributes, ..
-                        } => {
-                            let mut event = XmlEvent::start_element(name.borrow());
-                            for attr in &attributes {
-                                event = event.attr(attr.name.borrow(), &attr.value);
-                            }
+                writer.write(XmlEvent::start_element("a").attr("href", &link))?;
+                for elem in elems {
+                    write_rich_node(elem, writer)?;
+                }
+                writer.write(XmlEvent::end_element())
+            }
+            Link::Footnote(id) => todo!(),
+        },
+        RichText::ExternalLink(link) => match link {
+            Link::Text {
+                title: _,
+                elems,
+                dest_url,
+            } => {
+                let link = dest_url.clone();
 
-                            writer.write(event)?;
-                        }
-                        xml::reader::XmlEvent::CData(string) => {
-                            writer.write(XmlEvent::cdata(&string))?;
-                        }
-                        xml::reader::XmlEvent::Comment(string) => {
-                            writer.write(XmlEvent::comment(&string))?;
-                        }
-                        e => panic!("Cannot process {e:?}"),
-                    }
+                writer.write(XmlEvent::start_element("a").attr("href", &link))?;
+                for elem in elems {
+                    write_rich_node(elem, writer)?;
+                }
+                writer.write(XmlEvent::end_element())
+            }
+            Link::Footnote(id) => unreachable!("External Link to a footnote not possible"),
+        },
+        RichText::InternalImage(link) | RichText::ExternalImage(link) => match link {
+            Link::Text {
+                title: _,
+                elems,
+                dest_url,
+            } => {
+                let link = dest_url.clone();
 
-                    match inner.next() {
-                        Ok(xml::reader::XmlEvent::EndElement { name }) => {
-                            writer.write(XmlEvent::end_element().name(name.borrow()))?;
-                        }
-                        _ => {}
+                let mut alt = String::new();
+
+                for elem in elems {
+                    match elem {
+                        RichText::RawText(raw) => alt.push_str(raw),
+                        r => panic!("Can't include non-raw alt text in an image {r:?}"),
                     }
                 }
+
+                writer.write(
+                    XmlEvent::start_element("img")
+                        .attr("src", &link)
+                        .attr("alt", &alt),
+                )?;
+                for elem in elems {
+                    write_rich_node(elem, writer)?;
+                }
+                writer.write(XmlEvent::end_element())
             }
-            MdEvent::FootnoteReference(a) => {
-                let mut st = String::from("#footnote-");
-                st.push_str(&a);
-                writer.write(XmlEvent::start_element("sup"))?;
-                writer.write(XmlEvent::start_element("a").attr("href", &st))?;
-                writer.write(XmlEvent::characters(&a))?;
-                writer.write(XmlEvent::end_element())?;
-                writer.write(XmlEvent::end_element())?;
-            }
-            MdEvent::SoftBreak => {
-                writer.write(XmlEvent::start_element("br"))?;
-                writer.write(XmlEvent::end_element())?;
-            }
-            MdEvent::HardBreak => {
-                writer.write(XmlEvent::start_element("br"))?;
-                writer.write(XmlEvent::end_element())?;
-                writer.write(XmlEvent::start_element("br"))?;
-                writer.write(XmlEvent::end_element())?;
-            }
-            MdEvent::Rule => {
+            Link::Footnote(id) => unreachable!("External Link to a footnote not possible"),
+        },
+        RichText::Heading(heading) => {
+            let start = match heading.level {
+                HeadingLevel::H1 => XmlEvent::start_element("h1"),
+                HeadingLevel::H2 => XmlEvent::start_element("h2"),
+                HeadingLevel::H3 => XmlEvent::start_element("h3"),
+                HeadingLevel::H4 => XmlEvent::start_element("h4"),
+                HeadingLevel::H5 => XmlEvent::start_element("h5"),
+                HeadingLevel::H6 => XmlEvent::start_element("h6"),
+            };
+
+            writer.write(start.attr("id", &heading.id))?;
+            writer.write(XmlEvent::characters(&heading.text))?;
+            writer.write(XmlEvent::end_element())
+        }
+        RichText::TextBreak(break_type) => match break_type {
+            crate::bookir::BreakType::Rule => {
                 writer.write(XmlEvent::start_element("hr"))?;
+                writer.write(XmlEvent::end_element())
+            }
+            crate::bookir::BreakType::SoftLine | crate::bookir::BreakType::HardLine => {
+                writer.write(XmlEvent::start_element("br"))?;
+                writer.write(XmlEvent::end_element())
+            }
+        },
+        RichText::List(list) => {
+            match list.list_style {
+                ListStyle::Ordered(n) => {
+                    writer.write(XmlEvent::start_element("ol").attr("start", &format!("{n}")))?
+                }
+                ListStyle::Unordered => writer.write(XmlEvent::start_element("ul"))?,
+            }
+
+            for item in &list.elems {
+                writer.write(XmlEvent::start_element("li"))?;
+                for elem in &item.0 {
+                    write_rich_node(elem, writer)?;
+                }
                 writer.write(XmlEvent::end_element())?;
             }
-            MdEvent::TaskListMarker(val) => {}
+            writer.write(XmlEvent::end_element())
+        }
+        RichText::BlockQuote(vec) => {
+            writer.write(XmlEvent::start_element("bq"))?;
+            for elem in vec {
+                write_rich_node(elem, writer)?;
+            }
+            writer.write(XmlEvent::end_element())
         }
     }
+}
 
+pub fn write_chapter<W: std::io::Write>(
+    book: &BookChapter,
+    writer: &mut EventWriter<W>,
+) -> xml::writer::Result<()> {
+    writer.write(XmlEvent::StartDocument {
+        version: xml::common::XmlVersion::Version11,
+        encoding: Some("UTF-8"),
+        standalone: None,
+    })?;
+    writer.write(XmlEvent::start_element("html").ns(NS_NO_PREFIX, NS_XHTML_URI))?;
+
+    writer.write(XmlEvent::start_element("body"))?;
+    for elem in &book.content {
+        write_rich_node(elem, writer)?;
+    }
+    writer.write(XmlEvent::end_element())?;
     writer.write(XmlEvent::end_element())
 }

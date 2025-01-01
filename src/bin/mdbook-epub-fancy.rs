@@ -1,5 +1,6 @@
 use mdbook::renderer::RenderContext;
 use mdbook_fiction_tools::{
+    bookir::RichTextOptions,
     epub::{
         config::{EpubConfig, PackageId},
         info::EpubFileInfo,
@@ -22,7 +23,7 @@ fn main() -> io::Result<()> {
     gen_collected_output::<EpubConfig>(
         &ctx,
         "epub-fancy",
-        |path, src, title, chapters, config, extra_files, output| {
+        |path, _, book, config, output| {
             let path = {
                 let mut dest = dest.clone();
                 dest.push(path);
@@ -38,7 +39,7 @@ fn main() -> io::Result<()> {
             };
 
             let info = EpubFileInfo {
-                title: title.to_string(),
+                title: book.title.to_string(),
                 ident: id.unwrap_or_else(|| PackageId::Uuid {
                     uuid: Uuid::now_v7(),
                 }),
@@ -59,9 +60,10 @@ fn main() -> io::Result<()> {
                 .map(helpers::name_to_id)
                 .unwrap_or_else(|| "package".to_string());
 
-            write_epub(file, chapters, info, id, extra_files, src)?;
-
-            Ok(())
+            write_epub(file, book, info, id)
+        },
+        RichTextOptions {
+            ..Default::default()
         },
     )
 }

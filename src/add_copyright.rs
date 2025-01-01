@@ -136,6 +136,7 @@ impl AddCopyrightPreprocessor {
         root: &Path,
         stub: &str,
     ) -> MdResult<()> {
+        todo!();
         let Some(path) = &ch.path else { return Ok(()) };
 
         let renderer_file_set = config.renderer_sets.get(renderer);
@@ -181,8 +182,9 @@ impl AddCopyrightPreprocessor {
 
                             let events = stub_parser.into_iter().map(|mut m| {
                                 match &mut m {
-                                    Event::Start(tag) | Event::End(tag) => match tag {
-                                        Tag::Link(_, dest_url, _) | Tag::Image(_, dest_url, _) => {
+                                    Event::Start(tag) => match tag {
+                                        Tag::Link { dest_url, .. }
+                                        | Tag::Image { dest_url, .. } => {
                                             if !dest_url.is_empty()
                                                 && !dest_url.contains("://")
                                                 && !dest_url.starts_with("/")

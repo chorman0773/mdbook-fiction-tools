@@ -3,8 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use mdbook::{book::Chapter, BookItem};
-use pulldown_cmark::{Options, Parser};
 use xml::{
     name::Name,
     namespace::{Namespace, NS_NO_PREFIX, NS_XML_PREFIX, NS_XML_URI},
@@ -14,6 +12,10 @@ use xml::{
 use zip::write::{FileOptions, ZipWriter};
 
 use crate::{
+    bookir::{
+        nav::{NavHeading, NavTree},
+        Book,
+    },
     epub::{
         info::NS_CONTAINER_URI,
         package::{ItemProperty, ManifestItem, EPUB_PACKAGE_MEDIA_TYPE},
@@ -21,14 +23,10 @@ use crate::{
     helpers::{media_type_from_file, name_to_id, visit_chapters},
 };
 
-use self::{
-    info::EpubFileInfo,
-    nav::{NavHeading, NavNode, NavTree},
-};
+use info::EpubFileInfo;
 
 pub mod config;
 pub mod info;
-pub mod nav;
 pub mod package;
 #[cfg(feature = "epub-signatures")]
 pub mod signature;
@@ -38,28 +36,53 @@ pub mod xhtml;
 pub const NS_EPUB_PREFIX: &str = "epub";
 pub const NS_EPUB_URI: &str = "http://www.idpf.org/2007/ops";
 
-pub fn write_epub<
-    'a,
-    W: std::io::Write + std::io::Seek,
-    I: IntoIterator<Item = &'a BookItem>,
-    E: IntoIterator,
->(
+pub fn write_nav<W: std::io::Write>(
+    tree: &NavTree,
+    w: &mut EventWriter<W>,
+) -> xml::writer::Result<()> {
+    w.write(XmlEvent::start_element("ol"))?;
+
+    for node in tree {
+        match &node.heading {
+            NavHeading::Chapter(title, chapter) => {
+                let mut path = chapter.dest_path.to_path_buf();
+                path.set_extension("xhtml");
+
+                w.write(XmlEvent::start_element("li"))?;
+
+                w.write(XmlEvent::start_element("a").attr("href", &path.to_string_lossy()))?;
+                w.write(XmlEvent::characters(title))?;
+                w.write(XmlEvent::end_element())?;
+            }
+            NavHeading::Heading(head) => {
+                w.write(XmlEvent::start_element("li"))?;
+                w.write(XmlEvent::start_element("span"))?;
+                w.write(XmlEvent::characters(head))?;
+                w.write(XmlEvent::end_element())?;
+            }
+            NavHeading::UnboundChapter(title) => {
+                w.write(XmlEvent::start_element("li"))?;
+                w.write(XmlEvent::start_element("span"))?;
+                w.write(XmlEvent::characters(title))?;
+                w.write(XmlEvent::end_element())?;
+            }
+        }
+        if let Some(children) = &node.children {
+            write_nav(children, w)?;
+        }
+        w.write(XmlEvent::end_element())?;
+    }
+    w.write(XmlEvent::end_element())
+}
+
+pub fn write_epub<W: std::io::Write + std::io::Seek>(
     writer: W,
-    chapters: I,
+    book: Book,
     info: EpubFileInfo,
     package_id: String,
-    extra_files: E,
-    root: &Path,
-) -> std::io::Result<()>
-where
-    E::Item: AsRef<Path>,
-{
+) -> std::io::Result<()> {
     use std::io::Write;
-    let md_options = Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_STRIKETHROUGH
-        | Options::ENABLE_TABLES
-        | Options::ENABLE_HEADING_ATTRIBUTES;
-    let zip_file_options = FileOptions::default().unix_permissions(0o644);
+    let zip_file_options = FileOptions::default();
     let xml_config = EmitterConfig::new();
     let mut zip = ZipWriter::new(writer);
 
@@ -73,6 +96,37 @@ where
 
     let mut manifest = Vec::new();
 
+    for item in book.tree.nested() {
+        match &item.heading {
+            crate::bookir::nav::NavHeading::Chapter(title, chapter) => {
+                let in_file_path = {
+                    let mut path = chapter.dest_path.to_path_buf();
+                    path.set_extension("xhtml");
+                    path
+                };
+
+                let str = in_file_path.to_string_lossy();
+
+                zip.start_file(str, zip_file_options.clone())?;
+
+                let mut writer = EventWriter::new_with_config(&mut zip, xml_config.clone());
+                xhtml::write_chapter(chapter, &mut writer).map_err(xhtml::xml_to_io_error)?;
+
+                let spine_item = ManifestItem {
+                    id: name_to_id(title),
+                    path: in_file_path,
+                    media_type: Cow::Borrowed(xhtml::XHTML_MEDIA),
+                    properties: vec![],
+                    fallback: None,
+                    spine: true,
+                };
+
+                manifest.push(spine_item);
+            }
+            _ => {}
+        }
+    }
+
     let nav_item = ManifestItem {
         id: format!("nav-toc"),
         path: PathBuf::from("nav.xhtml"),
@@ -83,131 +137,6 @@ where
     };
 
     manifest.push(nav_item);
-
-    let (mut nav_tree, outstanding) = visit_chapters(
-        chapters,
-        |item, (nav_tree, outstanding)| {
-            match item {
-                BookItem::Separator => {
-                    if core::mem::take(outstanding.last_mut().unwrap()) {
-                        nav_tree.push(NavNode {
-                            heading: NavHeading::End,
-                            children: None,
-                        });
-                    }
-                }
-                BookItem::PartTitle(part) => {
-                    if core::mem::take(outstanding.last_mut().unwrap()) {
-                        nav_tree.push(NavNode {
-                            heading: NavHeading::End,
-                            children: None,
-                        });
-                    }
-                    nav_tree.push(NavNode {
-                        heading: NavHeading::Heading(part.clone()),
-                        children: None,
-                    });
-                    *outstanding.last_mut().unwrap() = true;
-                }
-                BookItem::Chapter(c) => {
-                    outstanding.push(false);
-                    if let Some(file) = &c.path {
-                        use core::fmt::Write as _;
-
-                        let mut file = file.clone();
-                        file.set_extension("xhtml");
-
-                        zip.start_file(file.to_string_lossy(), zip_file_options)?;
-
-                        nav_tree.push(NavNode {
-                            heading: NavHeading::Chapter(c.name.clone(), file.clone()),
-                            children: None,
-                        });
-
-                        let mut id = name_to_id(&c.name);
-                        write!(id, "{}", manifest.len()).unwrap();
-
-                        manifest.push(ManifestItem {
-                            id,
-                            path: file,
-                            media_type: Cow::Borrowed(xhtml::XHTML_MEDIA),
-                            properties: vec![],
-                            fallback: None,
-                            spine: true,
-                        });
-
-                        let mut md_parser = Parser::new_ext(&c.content, md_options);
-
-                        let mut writer = EventWriter::new_with_config(&mut zip, xml_config.clone());
-
-                        writer
-                            .write(XmlEvent::StartDocument {
-                                version: xml::common::XmlVersion::Version10,
-                                encoding: Some("UTF-8"),
-                                standalone: None,
-                            })
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(
-                                XmlEvent::start_element("html")
-                                    .ns(NS_NO_PREFIX, xhtml::NS_XHTML_URI)
-                                    .ns(NS_EPUB_PREFIX, NS_EPUB_URI),
-                            )
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(XmlEvent::start_element("head"))
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(XmlEvent::start_element("title"))
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(XmlEvent::characters(&c.name))
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(XmlEvent::end_element())
-                            .map_err(xhtml::xml_to_io_error)?; // </title>
-                        writer
-                            .write(XmlEvent::end_element())
-                            .map_err(xhtml::xml_to_io_error)?; // </head>
-                        xhtml::write_md(&mut md_parser, &mut writer)
-                            .map_err(xhtml::xml_to_io_error)?;
-                        writer
-                            .write(XmlEvent::end_element())
-                            .map_err(xhtml::xml_to_io_error)?; // </html>
-                    } else {
-                        nav_tree.push(NavNode {
-                            heading: NavHeading::UnboundChapter,
-                            children: None,
-                        });
-                    }
-                }
-            }
-            Ok(())
-        },
-        |(nav_tree, outstanding)| {
-            if outstanding.pop().unwrap() {
-                nav_tree.push(NavNode {
-                    heading: NavHeading::End,
-                    children: None,
-                });
-            }
-            nav_tree.push(NavNode {
-                heading: NavHeading::End,
-                children: None,
-            });
-        },
-        (NavTree::new(), vec![false]),
-    )
-    .unwrap();
-
-    if outstanding[0] {
-        nav_tree.push(NavNode {
-            heading: NavHeading::End,
-            children: None,
-        });
-    }
-
-    nav_tree.treeify();
 
     zip.start_file("nav.xhtml", zip_file_options)?;
 
@@ -248,9 +177,7 @@ where
     writer
         .write(XmlEvent::start_element("nav").attr(Name::prefixed("type", NS_EPUB_PREFIX), "toc"))
         .map_err(xhtml::xml_to_io_error)?;
-    nav_tree
-        .write_ol(&mut writer)
-        .map_err(xhtml::xml_to_io_error)?;
+    write_nav(&book.tree, &mut writer).map_err(xhtml::xml_to_io_error)?;
     writer
         .write(XmlEvent::end_element())
         .map_err(xhtml::xml_to_io_error)?; // </nav>
@@ -261,29 +188,21 @@ where
         .write(XmlEvent::end_element())
         .map_err(xhtml::xml_to_io_error)?; // </html>
 
-    for file in extra_files {
-        let file = file.as_ref();
-        eprintln!("{}:{}", file.display(), root.display());
-        let inner_path = file.strip_prefix(root).unwrap();
-
-        let path_str = inner_path.to_str().unwrap();
-
+    for file in book.extra_files {
         let mut id = format!("non-md-res{}", manifest.len());
-
-        let media_ty = media_type_from_file(&file);
 
         manifest.push(ManifestItem {
             id,
-            path: inner_path.to_path_buf(),
-            media_type: media_ty,
+            path: file.dest_path.clone(),
+            media_type: file.content_type.clone(),
             properties: vec![],
             fallback: None,
             spine: false,
         });
 
-        zip.start_file(path_str, zip_file_options)?;
+        zip.start_file(file.dest_path.to_string_lossy(), zip_file_options)?;
 
-        std::io::copy(&mut std::fs::File::open(file)?, &mut zip)?;
+        std::io::copy(&mut std::fs::File::open(&file.src_path)?, &mut zip)?;
     }
 
     let package = package::EpubPackage { info, manifest };

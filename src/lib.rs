@@ -1,12 +1,11 @@
+use bookir::{nav::NavTree, Book, BookChapter, ExtraItem, RichTextParser};
 use config::{Config, OutputFile, OutputType, SerList};
 use helpers::name_to_id;
-use mdbook::{
-    book::{Book, Chapter},
-    renderer::RenderContext,
-    BookItem,
-};
+use mdbook::{book::Chapter, renderer::RenderContext, BookItem};
+use pulldown_cmark::{Options, Parser};
 
 use std::{
+    borrow::Cow,
     collections::HashMap,
     ffi::OsStr,
     io,
@@ -22,6 +21,8 @@ pub mod helpers;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 
+pub mod bookir;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Output {
@@ -34,15 +35,8 @@ pub enum Output {
 pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
     ctx: &RenderContext,
     output_name: impl core::fmt::Display,
-    mut visitor: impl FnMut(
-        &Path,
-        &Path,
-        &str,
-        &mut dyn Iterator<Item = &'_ BookItem>,
-        &C,
-        &[PathBuf],
-        &Output,
-    ) -> io::Result<()>,
+    mut visitor: impl for<'a> FnMut(&Path, &Path, bookir::Book<'a>, &C, &Output) -> io::Result<()>,
+    options: bookir::RichTextOptions,
 ) -> io::Result<()> {
     let config: C = ctx
         .config
@@ -64,6 +58,28 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
             } else {
                 true
             }
+        })
+        .map(|r| match r {
+            Ok(src_path) => {
+                let inner_path = src_path
+                    .strip_prefix(&src)
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    .to_path_buf();
+
+                let content_type = config
+                    .content_types
+                    .get(&inner_path)
+                    .cloned()
+                    .map(Cow::Owned)
+                    .unwrap_or_else(|| helpers::media_type_from_file(&inner_path));
+
+                Ok(ExtraItem {
+                    dest_path: inner_path,
+                    src_path: src_path,
+                    content_type,
+                })
+            }
+            Err(e) => Err(e),
         })
         .collect::<io::Result<Vec<_>>>()?;
 
@@ -170,15 +186,21 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
 
                             let part = Output::Part(id.clone());
 
-                            let mut iter = chapter_list
-                                .get(&Output::ByPartHead)
-                                .into_iter()
-                                .flatten()
-                                .chain(&chapter_list[&part])
-                                .chain(chapter_list.get(&Output::ByPartTail).into_iter().flatten())
-                                .copied();
+                            let mut nav =
+                                NavTree::from_items(&chapter_list[&Output::ByPartHead], options);
+                            nav.append_tree(NavTree::from_items(&chapter_list[&part], options));
+                            nav.append_tree(NavTree::from_items(
+                                &chapter_list[&Output::ByPartTail],
+                                options,
+                            ));
 
-                            visitor(path, &src, title, &mut iter, &config, &extra_files, &part)?;
+                            let book = bookir::Book {
+                                title: title,
+                                tree: nav,
+                                extra_files: &extra_files,
+                            };
+
+                            visitor(path, &src, book, &config, &part)?;
                         }
                         _ => {}
                     }
@@ -195,15 +217,18 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                     Some(OutputFile::Enabled(false)) => return Ok(()),
                 };
 
-                visitor(
-                    path,
-                    &src,
-                    &titles[&Output::Full],
-                    &mut chapter_list[&Output::Full].iter().copied(),
-                    &config,
+                let book = Book::build(
+                    ctx.config
+                        .book
+                        .title
+                        .as_deref()
+                        .unwrap_or("Placeholder Title"),
+                    &chapter_list[&Output::Full],
+                    options,
                     &extra_files,
-                    &Output::Full,
-                )?;
+                );
+
+                visitor(path, &src, book, &config, &Output::Full)?;
             }
         }
     }

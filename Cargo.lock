@@ -582,7 +582,8 @@ version = "0.1.0"
 dependencies = [
  "indexmap",
  "mdbook",
- "pulldown-cmark 0.9.6",
+ "pdf-writer",
+ "pulldown-cmark 0.12.2",
  "pulldown-cmark-to-cmark",
  "ring",
  "semver",
@@ -693,6 +694,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdf-writer"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be17f48d7fbbd22c6efedb58af5d409aa578e407f40b29a0bcb4e66ed84c5c98"
+dependencies = [
+ "bitflags",
+ "itoa",
+ "memchr",
+ "ryu",
+]
+
+[[package]]
 name = "pest"
 version = "2.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -760,25 +773,26 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.9.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57206b407293d2bcd3af849ce869d52068623f19e1b5ff8e8778e3309439682b"
-dependencies = [
- "bitflags",
- "getopts",
- "memchr",
- "unicase",
-]
-
-[[package]]
-name = "pulldown-cmark"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76979bea66e7875e7509c4ec5300112b316af87fa7a252ca91c448b32dfe3993"
 dependencies = [
  "bitflags",
  "memchr",
- "pulldown-cmark-escape",
+ "pulldown-cmark-escape 0.10.1",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
+dependencies = [
+ "bitflags",
+ "getopts",
+ "memchr",
+ "pulldown-cmark-escape 0.11.0",
  "unicase",
 ]
 
@@ -789,12 +803,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd348ff538bc9caeda7ee8cad2d1d48236a1f443c1fa3913c6a02fe0043b1dd3"
 
 [[package]]
-name = "pulldown-cmark-to-cmark"
-version = "11.2.0"
+name = "pulldown-cmark-escape"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dd464f32d7631035e849fcd969a603e9bb17ceaebe8467352a7728147f34e42"
+checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
+
+[[package]]
+name = "pulldown-cmark-to-cmark"
+version = "20.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9011f674c69867783ceecfeb28573c75bcc9473ae64dcc3180d4a939943c3e42"
 dependencies = [
- "pulldown-cmark 0.9.6",
+ "pulldown-cmark 0.12.2",
 ]
 
 [[package]]

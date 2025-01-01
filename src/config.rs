@@ -205,6 +205,7 @@ pub struct SharedConfig {
     pub always_include: HashSet<PathBuf>,
     pub save_temps: bool,
     pub output_files: OutputFileSpec,
+    pub content_types: HashMap<PathBuf, String>,
 }
 
 const FULL_OUTPUT: SerList<OutputType> = SerList::SingleItem(OutputType::Full);
@@ -218,6 +219,20 @@ impl SharedConfig {
 pub trait Config: Default + Deref<Target = SharedConfig> {}
 
 impl<C: Default + Deref<Target = SharedConfig>> Config for C {}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+pub struct BasicConfig {
+    #[serde(flatten)]
+    pub base: SharedConfig,
+}
+
+impl Deref for BasicConfig {
+    type Target = SharedConfig;
+    fn deref(&self) -> &Self::Target {
+        &self.base
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(untagged)]
