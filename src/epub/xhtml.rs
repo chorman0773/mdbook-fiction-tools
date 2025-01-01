@@ -9,9 +9,20 @@ use xml::{
 };
 
 pub fn xml_to_io_error(e: xml::writer::Error) -> std::io::Error {
+    #[derive(Debug)]
+    struct Xml(xml::writer::Error);
+
+    impl core::fmt::Display for Xml {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+
+    impl std::error::Error for Xml {}
+
     match e {
         xml::writer::Error::Io(e) => e,
-        e => std::io::Error::new(std::io::ErrorKind::InvalidInput, e),
+        e => std::io::Error::new(std::io::ErrorKind::InvalidInput, Xml(e)),
     }
 }
 
@@ -131,6 +142,7 @@ pub fn write_md<W: std::io::Write>(
                         .trim();
 
                     writer.write(XmlEvent::end_element().name(elem))?;
+                } else if let Some(suffix) = elem.strip_prefix("<!--") {
                 } else {
                     let mut inner = xml::reader::EventReader::new(Cursor::new(elem.as_bytes()));
                     inner

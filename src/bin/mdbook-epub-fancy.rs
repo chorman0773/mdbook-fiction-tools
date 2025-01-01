@@ -22,7 +22,7 @@ fn main() -> io::Result<()> {
     gen_collected_output::<EpubConfig>(
         &ctx,
         "epub-fancy",
-        |path, title, chapters, config, extra_files, output| {
+        |path, src, title, chapters, config, extra_files, output| {
             let path = {
                 let mut dest = dest.clone();
                 dest.push(path);
@@ -59,7 +59,7 @@ fn main() -> io::Result<()> {
                 .map(helpers::name_to_id)
                 .unwrap_or_else(|| "package".to_string());
 
-            write_epub(file, chapters, info, id, extra_files, &ctx.config.book.src)?;
+            write_epub(file, chapters, info, id, extra_files, src)?;
 
             Ok(())
         },

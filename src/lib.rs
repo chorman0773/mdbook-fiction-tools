@@ -36,6 +36,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
     output_name: impl core::fmt::Display,
     mut visitor: impl FnMut(
         &Path,
+        &Path,
         &str,
         &mut dyn Iterator<Item = &'_ BookItem>,
         &C,
@@ -177,7 +178,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                                 .chain(chapter_list.get(&Output::ByPartTail).into_iter().flatten())
                                 .copied();
 
-                            visitor(path, title, &mut iter, &config, &extra_files, &part)?;
+                            visitor(path, &src, title, &mut iter, &config, &extra_files, &part)?;
                         }
                         _ => {}
                     }
@@ -196,6 +197,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
 
                 visitor(
                     path,
+                    &src,
                     &titles[&Output::Full],
                     &mut chapter_list[&Output::Full].iter().copied(),
                     &config,

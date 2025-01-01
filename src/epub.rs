@@ -263,6 +263,7 @@ where
 
     for file in extra_files {
         let file = file.as_ref();
+        eprintln!("{}:{}", file.display(), root.display());
         let inner_path = file.strip_prefix(root).unwrap();
 
         let path_str = inner_path.to_str().unwrap();
