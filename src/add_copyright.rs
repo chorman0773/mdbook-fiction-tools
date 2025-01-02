@@ -136,7 +136,6 @@ impl AddCopyrightPreprocessor {
         root: &Path,
         stub: &str,
     ) -> MdResult<()> {
-        todo!();
         let Some(path) = &ch.path else { return Ok(()) };
 
         let renderer_file_set = config.renderer_sets.get(renderer);
@@ -169,7 +168,7 @@ impl AddCopyrightPreprocessor {
                     if let Some((a, b)) = text.split_once("!{#copyright}") {
                         state = Some(
                             cmark_resume_with_options(
-                                [Event::Text(CowStr::Borrowed(a))].into_iter(),
+                                [Event::Text(CowStr::Borrowed(a).into_static())].into_iter(),
                                 &mut output,
                                 state.take(),
                                 print_options.clone(),
@@ -234,7 +233,7 @@ impl AddCopyrightPreprocessor {
                         }
                         state = Some(
                             cmark_resume_with_options(
-                                core::iter::once(Event::Text(CowStr::Borrowed(b))),
+                                core::iter::once(Event::Text(CowStr::Borrowed(b).into_static())),
                                 &mut output,
                                 state.take(),
                                 print_options.clone(),
@@ -244,7 +243,7 @@ impl AddCopyrightPreprocessor {
                     } else {
                         state = Some(
                             cmark_resume_with_options(
-                                core::iter::once(Event::Text(text)),
+                                core::iter::once(Event::Text(text.clone())),
                                 &mut output,
                                 state.take(),
                                 print_options.clone(),
