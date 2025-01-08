@@ -21,6 +21,9 @@ pub mod helpers;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 
+#[cfg(feature = "xhtml")]
+pub mod xhtml;
+
 pub mod bookir;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]

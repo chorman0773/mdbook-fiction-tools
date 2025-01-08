@@ -31,7 +31,7 @@ pub mod package;
 #[cfg(feature = "epub-signatures")]
 pub mod signature;
 pub mod style;
-pub mod xhtml;
+use crate::xhtml;
 
 pub const NS_EPUB_PREFIX: &str = "epub";
 pub const NS_EPUB_URI: &str = "http://www.idpf.org/2007/ops";
