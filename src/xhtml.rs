@@ -9,7 +9,8 @@ use xml::{
 };
 
 use crate::bookir::{
-    Book, BookChapter, CowStr, HeadingLevel, InlineXhtml, Link, ListStyle, RichText, XmlNode,
+    Alignment, Book, BookChapter, CowStr, HeadingLevel, InlineXhtml, Link, ListStyle, RichText,
+    XmlNode,
 };
 
 pub fn xml_to_io_error(e: xml::writer::Error) -> std::io::Error {
@@ -39,6 +40,46 @@ pub fn write_rich_node<W: std::io::Write>(
     writer: &mut EventWriter<W>,
 ) -> xml::writer::Result<()> {
     match node {
+        RichText::Table(tbl) => {
+            let style = tbl.align.iter().map(|al| match al {
+                Alignment::None => None,
+                Alignment::Left => Some("text-align: left;"),
+                Alignment::Right => Some("text-align: right;"),
+                Alignment::Center => Some("text-align: center;"),
+            });
+
+            writer.write(XmlEvent::start_element("table"))?;
+
+            if let Some(head) = &tbl.head {
+                writer.write(XmlEvent::start_element("tr"))?;
+                for (style, elem) in style.clone().zip(&head.elems) {
+                    let mut th = XmlEvent::start_element("th");
+                    if let Some(style) = style {
+                        th = th.attr("style", style);
+                    }
+                    writer.write(th);
+                    write_rich_node(elem, writer)?;
+                    writer.write(XmlEvent::end_element())?;
+                }
+                writer.write(XmlEvent::end_element())?;
+            }
+
+            for row in &tbl.body {
+                writer.write(XmlEvent::start_element("tr"))?;
+                for (style, elem) in style.clone().zip(&row.elems) {
+                    let mut td = XmlEvent::start_element("td");
+                    if let Some(style) = style {
+                        td = td.attr("style", style);
+                    }
+                    writer.write(td);
+                    write_rich_node(elem, writer)?;
+                    writer.write(XmlEvent::end_element())?;
+                }
+                writer.write(XmlEvent::end_element())?;
+            }
+
+            writer.write(XmlEvent::end_element())
+        }
         RichText::RawText(cow_str) => writer.write(XmlEvent::characters(cow_str)),
         RichText::Xhtml(inline_xhtml) => match inline_xhtml {
             InlineXhtml::CData(cdata) => writer.write(XmlEvent::cdata(cdata)),

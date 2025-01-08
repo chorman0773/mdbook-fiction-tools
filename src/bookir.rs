@@ -27,6 +27,14 @@ use xml::XmlElem;
 
 pub use str::CowStr;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Alignment {
+    None,
+    Left,
+    Center,
+    Right,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum XmlNode<'a> {
     Block(XmlElem, Vec<RichText<'a>>),
@@ -68,6 +76,18 @@ pub struct CodeBlock<'a> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Table<'a> {
+    pub align: Vec<Alignment>,
+    pub head: Option<TableRow<'a>>,
+    pub body: Vec<TableRow<'a>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableRow<'a> {
+    pub elems: Vec<RichText<'a>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RichText<'a> {
     RawText(CowStr<'a>),
     Xhtml(InlineXhtml<'a>),
@@ -83,6 +103,7 @@ pub enum RichText<'a> {
     Heading(Heading<'a>),
     TextBreak(BreakType),
     List(List<'a>),
+    Table(Table<'a>),
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
