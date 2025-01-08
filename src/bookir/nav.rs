@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use std::thread::current;
 
 use mdbook::BookItem;
+use serde::{Deserialize, Serialize};
 use xml::name::Name;
 use xml::namespace::Namespace;
 use xml::writer::{EventWriter, XmlEvent};
 
-use super::{BookChapter, RichTextOptions};
+use super::{BookChapter, CowStr, RichTextOptions};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct NavTree<'a>(Vec<NavNode<'a>>);
 
 impl<'a> NavTree<'a> {
@@ -41,15 +42,15 @@ impl<'a> NavTree<'a> {
                     };
 
                     let heading = match content {
-                        Some(chapter) => NavHeading::Chapter(&ch.name, chapter),
-                        None => NavHeading::UnboundChapter(&ch.name),
+                        Some(chapter) => NavHeading::Chapter(CowStr::Borrowed(&ch.name), chapter),
+                        None => NavHeading::UnboundChapter(CowStr::Borrowed(&ch.name)),
                     };
                     current_part.push(NavNode { heading, children })
                 }
                 BookItem::PartTitle(title) => {
                     if let Some(part_title) = part_title.replace(title) {
                         node.push(NavNode {
-                            heading: NavHeading::Heading(part_title),
+                            heading: NavHeading::Heading(CowStr::Borrowed(part_title)),
                             children: Some(NavTree::from_vec(core::mem::take(&mut current_part))),
                         });
                     } else {
@@ -59,7 +60,7 @@ impl<'a> NavTree<'a> {
                 BookItem::Separator => {
                     if let Some(part_title) = part_title.take() {
                         node.push(NavNode {
-                            heading: NavHeading::Heading(part_title),
+                            heading: NavHeading::Heading(CowStr::Borrowed(part_title)),
                             children: Some(NavTree::from_vec(core::mem::take(&mut current_part))),
                         });
                     }
@@ -69,7 +70,7 @@ impl<'a> NavTree<'a> {
 
         if let Some(part_title) = part_title.take() {
             node.push(NavNode {
-                heading: NavHeading::Heading(part_title),
+                heading: NavHeading::Heading(CowStr::Borrowed(part_title)),
                 children: Some(NavTree::from_vec(core::mem::take(&mut current_part))),
             });
         } else {
@@ -135,15 +136,15 @@ impl<'tree, 'src> Iterator for Nested<'tree, 'src> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct NavNode<'a> {
     pub heading: NavHeading<'a>,
     pub children: Option<NavTree<'a>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum NavHeading<'a> {
-    Chapter(&'a str, BookChapter<'a>),
-    UnboundChapter(&'a str),
-    Heading(&'a str),
+    Chapter(CowStr<'a>, BookChapter<'a>),
+    UnboundChapter(CowStr<'a>),
+    Heading(CowStr<'a>),
 }

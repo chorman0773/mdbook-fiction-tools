@@ -1,4 +1,3 @@
-use pulldown_cmark::{CowStr, Event as MdEvent, Parser, Tag as MdTag};
 use std::{
     borrow::Cow,
     io::{self, Cursor},
@@ -10,7 +9,7 @@ use xml::{
 };
 
 use crate::bookir::{
-    Book, BookChapter, HeadingLevel, InlineXhtml, Link, ListStyle, RichText, XmlNode,
+    Book, BookChapter, CowStr, HeadingLevel, InlineXhtml, Link, ListStyle, RichText, XmlNode,
 };
 
 pub fn xml_to_io_error(e: xml::writer::Error) -> std::io::Error {
@@ -45,22 +44,14 @@ pub fn write_rich_node<W: std::io::Write>(
             InlineXhtml::CData(cdata) => writer.write(XmlEvent::cdata(cdata)),
             InlineXhtml::Comment(comment) => writer.write(XmlEvent::comment(comment)),
             InlineXhtml::Node(XmlNode::Block(elem_event, content)) => {
-                writer.write(
-                    elem_event
-                        .as_writer_event()
-                        .expect("Expected a StartElementEvent"),
-                )?;
+                writer.write(elem_event)?;
                 for elem in content {
                     write_rich_node(elem, writer)?;
                 }
                 writer.write(XmlEvent::end_element())
             }
             InlineXhtml::Node(XmlNode::Inline(elem_event)) => {
-                writer.write(
-                    elem_event
-                        .as_writer_event()
-                        .expect("Expected a StartElementEvent"),
-                )?;
+                writer.write(elem_event)?;
                 writer.write(XmlEvent::end_element())
             }
         },
@@ -122,7 +113,7 @@ pub fn write_rich_node<W: std::io::Write>(
                 let link = if let Some(prefix) = dest_url.strip_suffix(".md") {
                     CowStr::from(format!("{prefix}.xhtml"))
                 } else {
-                    dest_url.clone()
+                    dest_url.into()
                 };
 
                 writer.write(XmlEvent::start_element("a").attr("href", &link))?;

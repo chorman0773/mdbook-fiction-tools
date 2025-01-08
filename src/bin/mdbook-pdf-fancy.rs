@@ -1,8 +1,10 @@
 use mdbook::renderer::RenderContext;
 use mdbook_fiction_tools::{
-    bookir::RichTextOptions, config::BasicConfig, gen_collected_output, helpers, Output,
+    bookir::RichTextOptions,
+    gen_collected_output, helpers,
+    pdf::{config::PdfConfig, write_pdf},
+    Output,
 };
-use serde_json::Error;
 use std::{fs, io};
 use uuid::Uuid;
 
@@ -15,26 +17,26 @@ fn main() -> io::Result<()> {
 
     fs::create_dir_all(&dest)?;
 
-    gen_collected_output::<BasicConfig>(
+    gen_collected_output::<PdfConfig>(
         &ctx,
-        "bookir",
-        |path, src, book, config, output| {
-            use std::io::Write;
+        "epub-fancy",
+        |path, _, book, config, output| {
             let path = {
                 let mut dest = dest.clone();
                 dest.push(path);
-                dest.set_extension("bookir");
+                dest.set_extension("pdf");
                 dest
             };
             let file = fs::File::create(path)?;
 
-            serde_json::to_writer_pretty(file, &book).map_err(|e| {
-                if let Some(kind) = e.io_error_kind() {
-                    io::Error::new(kind, e)
-                } else {
-                    io::Error::new(io::ErrorKind::Other, e)
-                }
-            })
+            let file_id = match output {
+                Output::Full => config.file_ids.full.as_ref().cloned(),
+                Output::Part(id) => config.file_ids.individual_files.get(id).cloned(),
+                _ => None,
+            };
+
+            let file_id = file_id.unwrap_or_else(|| Uuid::now_v7());
+            todo!()
         },
         RichTextOptions {
             ..Default::default()

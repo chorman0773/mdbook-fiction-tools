@@ -1,36 +1,46 @@
+use std::io::{self, Stdin};
+use std::process::Stdio;
 use std::{
     borrow::{Borrow, Cow},
     num::NonZero,
     ops::ControlFlow,
     path::{Path, PathBuf},
+    process::Command,
 };
 
+use ::xml::{name::Name, reader::XmlEvent, EventReader};
 use mdbook::{book::BookItems, BookItem};
 use nav::NavTree;
-pub use pulldown_cmark::CowStr;
 use pulldown_cmark::{
-    CodeBlockKind, Event, HeadingLevel as MdHeadingLevel, LinkType, Parser, Tag, TagEnd,
+    CodeBlockKind, Event, HeadingLevel as MdHeadingLevel, InlineStr, LinkType, Parser, Tag, TagEnd,
 };
-use xml::{name::Name, reader::XmlEvent, EventReader};
+use serde::{Deserialize, Serialize};
 
 use crate::helpers;
 
 pub mod nav;
+pub mod render;
+pub mod str;
+pub mod xml;
 
-#[derive(Debug, Clone)]
+use xml::XmlElem;
+
+pub use str::CowStr;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum XmlNode<'a> {
-    Block(XmlEvent, Vec<RichText<'a>>),
-    Inline(XmlEvent),
+    Block(XmlElem, Vec<RichText<'a>>),
+    Inline(XmlElem),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum InlineXhtml<'a> {
     Node(XmlNode<'a>),
     Comment(CowStr<'a>),
     CData(CowStr<'a>),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Attributes {
     pub bold: bool,
     pub italics: bool,
@@ -41,7 +51,7 @@ pub struct Attributes {
     pub __non_exhaustive: (),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Link<'a> {
     Text {
         title: CowStr<'a>,
@@ -51,13 +61,13 @@ pub enum Link<'a> {
     Footnote(CowStr<'a>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeBlock<'a> {
     pub lang: CowStr<'a>,
     pub content: CowStr<'a>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RichText<'a> {
     RawText(CowStr<'a>),
     Xhtml(InlineXhtml<'a>),
@@ -75,36 +85,37 @@ pub enum RichText<'a> {
     List(List<'a>),
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ListStyle {
     Unordered,
+    #[serde(untagged)]
     Ordered(u64),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListItem<'a>(pub Vec<RichText<'a>>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct List<'a> {
     pub list_style: ListStyle,
     pub elems: Vec<ListItem<'a>>,
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BreakType {
     Rule,
     SoftLine,
     HardLine,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Heading<'a> {
     pub level: HeadingLevel,
     pub text: CowStr<'a>,
     pub id: CowStr<'a>,
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HeadingLevel {
     H1,
     H2,
@@ -149,8 +160,8 @@ impl<'a> RichTextParser<'a> {
     fn next_primitive(&mut self) -> Option<Result<RichText<'a>, Event<'a>>> {
         Some(match self.0.next()? {
             e @ (Event::Start(_) | Event::End(_)) => Err(e),
-            Event::Text(text) => Ok(RichText::RawText(text)),
-            Event::Code(code) => Ok(RichText::InlineCode(code)),
+            Event::Text(text) => Ok(RichText::RawText(text.into())),
+            Event::Code(code) => Ok(RichText::InlineCode(code.into())),
             Event::InlineMath(tex) => todo!("latex {tex}"),
             Event::DisplayMath(tex) => todo!("latex {tex}"),
             Event::InlineHtml(html) | Event::Html(html) => {
@@ -168,7 +179,7 @@ impl<'a> RichTextParser<'a> {
                     Err(Event::InlineHtml(html))
                 }
             }
-            Event::FootnoteReference(id) => Ok(RichText::InternalLink(Link::Footnote(id))),
+            Event::FootnoteReference(id) => Ok(RichText::InternalLink(Link::Footnote(id.into()))),
             Event::SoftBreak => Ok(RichText::TextBreak(BreakType::SoftLine)),
             Event::HardBreak => Ok(RichText::TextBreak(BreakType::HardLine)),
             Event::Rule => Ok(RichText::TextBreak(BreakType::Rule)),
@@ -192,7 +203,7 @@ impl<'a> RichTextParser<'a> {
                         CowStr::Borrowed(elem).into_static(),
                     )))
                 } else {
-                    self.handle_html(html).map(ControlFlow::Continue)
+                    self.handle_html(html.into()).map(ControlFlow::Continue)
                 }
             }
             Err(e) => unimplemented!("Non-primitive tag {e:?}"),
@@ -223,13 +234,22 @@ impl<'a> RichTextParser<'a> {
             _ => None,
         };
 
-        let tag_name = match &elem {
-            XmlEvent::StartElement { name, .. } => {
+        let elem = match elem {
+            XmlEvent::StartElement {
+                name, attributes, ..
+            } => {
+                let elem = XmlElem {
+                    name: name.to_string(),
+                    attrs: attributes
+                        .into_iter()
+                        .map(|a| (a.name.to_string(), a.value))
+                        .collect(),
+                };
                 if let Some(end) = &end_name {
-                    assert_eq!(name, end, "Invalid xhtml tag {name:?}");
+                    assert_eq!(elem.name, end.to_string(), "Invalid xhtml tag {name:?}");
                     return Some(RichText::Xhtml(InlineXhtml::Node(XmlNode::Inline(elem))));
                 }
-                name
+                elem
             }
             e => panic!("Unexpected inline xhtml {e:?}"),
         };
@@ -237,7 +257,7 @@ impl<'a> RichTextParser<'a> {
 
         match end {
             EndMarker::XhtmlTag(tag) => {
-                assert_eq!(tag_name.borrow(), Name::from(&*tag));
+                assert_eq!(tag, elem.name);
                 Some(RichText::Xhtml(InlineXhtml::Node(XmlNode::Block(
                     elem, elems,
                 ))))
@@ -272,11 +292,14 @@ impl<'a> RichTextParser<'a> {
                     }
                 }
 
-                let id = id.unwrap_or_else(|| {
-                    let id = helpers::name_to_id(&text);
+                let id = id.map_or_else(
+                    || {
+                        let id = helpers::name_to_id(&text);
 
-                    CowStr::Boxed(id.into_boxed_str())
-                });
+                        CowStr::Boxed(id.into_boxed_str())
+                    },
+                    Into::into,
+                );
 
                 let text = CowStr::Boxed(text.into_boxed_str());
                 Some(RichText::Heading(Heading { level, text, id }))
@@ -288,7 +311,7 @@ impl<'a> RichTextParser<'a> {
             }
             Tag::CodeBlock(code_block_kind) => {
                 let lang = match code_block_kind {
-                    CodeBlockKind::Fenced(lang) => lang,
+                    CodeBlockKind::Fenced(lang) => lang.into(),
                     CodeBlockKind::Indented => CowStr::Borrowed(""),
                 };
 
@@ -345,9 +368,9 @@ impl<'a> RichTextParser<'a> {
                 let is_internal = dest_url.find("://").is_none();
                 let (elems, _) = self.to_end()?;
                 let link = Link::Text {
-                    title,
+                    title: title.into(),
                     elems,
-                    dest_url,
+                    dest_url: dest_url.into(),
                 };
 
                 if is_internal {
@@ -365,9 +388,9 @@ impl<'a> RichTextParser<'a> {
                 let is_internal = dest_url.find("://").is_none();
                 let (elems, _) = self.to_end()?;
                 let link = Link::Text {
-                    title,
+                    title: title.into(),
                     elems,
-                    dest_url,
+                    dest_url: dest_url.into(),
                 };
 
                 if is_internal {
@@ -408,10 +431,10 @@ impl<'a> Iterator for RichTextParser<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct BookChapter<'a> {
-    pub src_path: &'a Path,
-    pub dest_path: &'a Path,
+    pub src_path: Cow<'a, Path>,
+    pub dest_path: Cow<'a, Path>,
     pub content: Vec<RichText<'a>>,
 }
 
@@ -422,14 +445,14 @@ impl<'a> BookChapter<'a> {
         let content = RichTextParser::new(&ch.content, opts).collect();
 
         Some(Self {
-            src_path,
-            dest_path,
+            src_path: Cow::Borrowed(src_path),
+            dest_path: Cow::Borrowed(dest_path),
             content,
         })
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct ExtraItem {
     pub src_path: PathBuf,
     pub dest_path: PathBuf,
@@ -447,7 +470,7 @@ impl core::fmt::Debug for ExtraItem {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Book<'a> {
     pub title: &'a str,
     pub tree: NavTree<'a>,
