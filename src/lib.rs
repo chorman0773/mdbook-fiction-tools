@@ -181,6 +181,10 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                         BookItem::PartTitle(title) => {
                             let id = helpers::name_to_id(title);
 
+                            let title = title
+                                .split_once("{")
+                                .map_or(&**title, |(title, _)| title)
+                                .trim();
                             let path = match config.output_files.individual_files.get(&id) {
                                 Some(OutputFile::Path(path)) => Path::new(path),
                                 None | Some(OutputFile::Enabled(true)) => Path::new(&id),
@@ -198,7 +202,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                             ));
 
                             let book = bookir::Book {
-                                title: title,
+                                title,
                                 tree: nav,
                                 extra_files: &extra_files,
                             };

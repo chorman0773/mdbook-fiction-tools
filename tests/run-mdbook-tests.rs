@@ -2,42 +2,34 @@
 
 use std::process::Command;
 
-const MDBOOK_EPUB_FANCY: &str = std::env!("CARGO_BIN_EXE_mdbook-epub-fancy");
-const MDBOOK_BOOKIR: &str = std::env!("CARGO_BIN_EXE_mdbook-bookir");
-
-#[test]
-fn run_epub_fancy_tests() -> std::io::Result<()> {
-    for test in
-        std::fs::read_dir("tests/mdbook-epub-fancy")?.chain(std::fs::read_dir("tests/common")?)
-    {
-        let test = test?;
-        println!("(epub-fancy): {}", test.file_name().display());
-        let path = test.path();
-        Command::new("mdbook")
-            .arg("build")
-            .arg(path)
-            .env("MDBOOK_output__epub_fancy__command", MDBOOK_EPUB_FANCY)
-            .status()?
-            .exit_ok()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+macro_rules! build_test_fn{
+    {$($(#[$meta:meta])* test $($parts:ident)-+;)*} => {
+        paste::paste!{
+           $(
+            $(#[$meta])*
+            #[test]
+            fn [<run_ $($parts)_* _tests>]() -> std::io::Result<()>{
+                const EXE: &str = ::core::env!(::core::concat!("CARGO_BIN_EXE_mdbook",$("-", ::core::stringify!($parts)),+));
+                for test in std::fs::read_dir(::core::concat!("tests/mdbook", $("-", ::core::stringify!($parts)),+))?.chain(std::fs::read_dir("tests/common")?)
+                {
+                    let test = test?;
+                    println!(::core::concat!("(" $(,::core::stringify!($parts),)"-"+ "): {}"), test.file_name().display());
+                    let path = test.path();
+                    Command::new("mdbook")
+                        .arg("build")
+                        .arg(path)
+                        .env(::core::concat!("MDBOOK_output__" $(,::core::stringify!($parts),)"_"+ "__command"), EXE)
+                        .status()?
+                        .exit_ok()
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                }
+                Ok(())
+            })*
+        }
     }
-    Ok(())
 }
-
-#[test]
-fn run_bookir_tests() -> std::io::Result<()> {
-    for test in std::fs::read_dir("tests/mdbook-bookir")?.chain(std::fs::read_dir("tests/common")?)
-    {
-        let test = test?;
-        println!("(bookir): {}", test.file_name().display());
-        let path = test.path();
-        Command::new("mdbook")
-            .arg("build")
-            .arg(path)
-            .env("MDBOOK_output__bookir__command", MDBOOK_BOOKIR)
-            .status()?
-            .exit_ok()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    }
-    Ok(())
+build_test_fn! {
+    test bookir;
+    #[cfg(feature = "epub")]
+    test epub-fancy;
 }

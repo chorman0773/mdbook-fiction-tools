@@ -17,3 +17,5 @@ pub fn write_pdf<W: std::io::Write>(
     let mut pdf = krilla::Document::new();
     todo!()
 }
+
+mod fonts;

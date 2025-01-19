@@ -30,3 +30,6 @@ xhtml = []
 [[bin]]
 name = "mdbook-epub-fancy"
 required-features = ["epub"]
+
+[dev-dependencies]
+paste = "1.0.15"

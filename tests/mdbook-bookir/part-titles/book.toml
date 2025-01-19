@@ -1,0 +1,11 @@
+[book]
+authors = ["Connor Horman"]
+language = "en"
+multilingual = false
+src = "src"
+title = "part-titles"
+
+[output.markdown]
+
+[output.bookir]
+output = ["part"]
