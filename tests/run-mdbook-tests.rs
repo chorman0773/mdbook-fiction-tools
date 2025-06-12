@@ -3,7 +3,7 @@
 use std::process::Command;
 
 macro_rules! build_test_fn{
-    {$($(#[$meta:meta])* test $($parts:ident)-+;)*} => {
+    {$($(#[$meta:meta])* test $kind:ident $($parts:ident)-+;)*} => {
         paste::paste!{
            $(
             $(#[$meta])*
@@ -18,7 +18,7 @@ macro_rules! build_test_fn{
                     Command::new("mdbook")
                         .arg("build")
                         .arg(path)
-                        .env(::core::concat!("MDBOOK_output__" $(,::core::stringify!($parts),)"_"+ "__command"), EXE)
+                        .env(::core::concat!("MDBOOK_", ::core::stringify!($kind), "__" $(,::core::stringify!($parts),)"_"+ "__command"), EXE)
                         .status()?
                         .exit_ok()
                         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
@@ -29,7 +29,9 @@ macro_rules! build_test_fn{
     }
 }
 build_test_fn! {
-    test bookir;
+    test output bookir;
     #[cfg(feature = "epub")]
-    test epub-fancy;
+    test output epub-fancy;
+
+    test preprocessor add-copyright;
 }
