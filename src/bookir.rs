@@ -18,6 +18,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::helpers;
 
+#[cfg(feature = "math")]
+pub mod math;
+
 pub mod nav;
 pub mod render;
 pub mod str;
@@ -88,6 +91,7 @@ pub struct TableRow<'a> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum RichText<'a> {
     RawText(CowStr<'a>),
     Xhtml(InlineXhtml<'a>),
@@ -104,6 +108,10 @@ pub enum RichText<'a> {
     TextBreak(BreakType),
     List(List<'a>),
     Table(Table<'a>),
+    #[cfg(feature = "math")]
+    MathBlock(math::Math<'a>),
+    #[cfg(feature = "math")]
+    InlineMath(math::Math<'a>),
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,8 +191,12 @@ impl<'a> RichTextParser<'a> {
             e @ (Event::Start(_) | Event::End(_)) => Err(e),
             Event::Text(text) => Ok(RichText::RawText(text.into())),
             Event::Code(code) => Ok(RichText::InlineCode(code.into())),
+            #[cfg(feature = "math")]
             Event::InlineMath(tex) => todo!("latex {tex}"),
+            #[cfg(feature = "math")]
             Event::DisplayMath(tex) => todo!("latex {tex}"),
+            #[cfg(not(feature = "math"))]
+            Event::InlineMath(_) | Event::DisplayMath(_) => unreachable!("No math support"),
             Event::InlineHtml(html) | Event::Html(html) => {
                 if let Some(comment) = html.strip_prefix("<!--") {
                     let comment_body = comment.strip_suffix("-->")?;
@@ -496,6 +508,8 @@ pub struct Book<'a> {
     pub title: &'a str,
     pub tree: NavTree<'a>,
     pub extra_files: &'a [ExtraItem],
+    pub authors: &'a [&'a str],
+    pub id: &'a str,
 }
 
 impl<'a> Book<'a> {
@@ -504,11 +518,15 @@ impl<'a> Book<'a> {
         items: &'a [A],
         opts: RichTextOptions,
         extra_files: &'a [ExtraItem],
+        authors: &'a [&'a str],
+        id: &'a str,
     ) -> Book<'a> {
         Book {
             title,
             tree: NavTree::from_items(items, opts),
             extra_files,
+            authors,
+            id,
         }
     }
 }

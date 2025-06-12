@@ -785,6 +785,7 @@ dependencies = [
  "paste",
  "pulldown-cmark 0.12.2",
  "pulldown-cmark-to-cmark",
+ "pulldown-latex",
  "ring",
  "semver",
  "serde",
@@ -1050,6 +1051,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9011f674c69867783ceecfeb28573c75bcc9473ae64dcc3180d4a939943c3e42"
 dependencies = [
  "pulldown-cmark 0.12.2",
+]
+
+[[package]]
+name = "pulldown-latex"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b8bc0583825170e3f560701d966dc2f0e3a16946da371e37d30d3ad7207fb7e"
+dependencies = [
+ "bumpalo",
 ]
 
 [[package]]

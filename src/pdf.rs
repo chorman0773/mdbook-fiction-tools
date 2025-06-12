@@ -1,6 +1,7 @@
 use std::io;
 
-use krilla::font::Font;
+use fonts::FontSet;
+use krilla::metadata::Metadata;
 use uuid::Uuid;
 
 use crate::bookir::Book;
@@ -11,10 +12,11 @@ pub fn write_pdf<W: std::io::Write>(
     file: W,
     book: Book,
     file_id: Uuid,
-    def_font: Font,
-    mono_font: Font,
+    def_font: FontSet,
+    mono_font: FontSet,
 ) -> io::Result<()> {
     let mut pdf = krilla::Document::new();
+    pdf.set_metadata(Metadata::new());
     todo!()
 }
 

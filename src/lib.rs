@@ -39,7 +39,7 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
     ctx: &RenderContext,
     output_name: impl core::fmt::Display,
     mut visitor: impl for<'a> FnMut(&Path, &Path, bookir::Book<'a>, &C, &Output) -> io::Result<()>,
-    options: bookir::RichTextOptions,
+    mut options: bookir::RichTextOptions,
 ) -> io::Result<()> {
     let config: C = ctx
         .config
@@ -49,6 +49,19 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
 
     let mut chapter_list = HashMap::new();
     let mut titles = HashMap::new();
+
+    #[cfg(feature = "math")]
+    {
+        options.math = config.math_support;
+    }
+
+    let authors = ctx
+        .config
+        .book
+        .authors
+        .iter()
+        .map(|r| &**r)
+        .collect::<Vec<_>>();
 
     let mut src = ctx.root.clone();
     src.push(&ctx.config.book.src);
@@ -205,6 +218,8 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                                 title,
                                 tree: nav,
                                 extra_files: &extra_files,
+                                authors: &authors,
+                                id: &id,
                             };
 
                             visitor(path, &src, book, &config, &part)?;
@@ -233,6 +248,8 @@ pub fn gen_collected_output<C: Config + for<'a> serde::Deserialize<'a>>(
                     &chapter_list[&Output::Full],
                     options,
                     &extra_files,
+                    &authors,
+                    title_id.as_deref().unwrap_or("book"),
                 );
 
                 visitor(path, &src, book, &config, &Output::Full)?;

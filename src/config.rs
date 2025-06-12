@@ -200,12 +200,17 @@ pub enum OutputType {
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "kebab-case", default)]
+
 pub struct SharedConfig {
     pub output: Option<SerList<OutputType>>,
     pub always_include: HashSet<PathBuf>,
     pub save_temps: bool,
     pub output_files: OutputFileSpec,
     pub content_types: HashMap<PathBuf, String>,
+    #[cfg(feature = "math")]
+    pub math_support: bool,
+    #[doc(hidden)]
+    pub __non_exhaustive: (),
 }
 
 const FULL_OUTPUT: SerList<OutputType> = SerList::SingleItem(OutputType::Full);

@@ -258,6 +258,10 @@ pub fn write_rich_node<W: std::io::Write>(
             }
             writer.write(XmlEvent::end_element())
         }
+        #[cfg(feature = "math")]
+        RichText::MathBlock(_) => todo!(),
+        #[cfg(feature = "math")]
+        RichText::InlineMath(_) => todo!(),
     }
 }
 

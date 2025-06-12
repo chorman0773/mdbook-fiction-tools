@@ -49,18 +49,12 @@ fn main() -> io::Result<()> {
                     .language
                     .clone()
                     .unwrap_or_else(|| "en-us".to_string()),
-                creators: ctx.config.book.authors.clone(),
+                creators: book.authors.iter().map(|v| v.to_string()).collect(),
             };
 
-            let id = ctx
-                .config
-                .book
-                .title
-                .as_deref()
-                .map(helpers::name_to_id)
-                .unwrap_or_else(|| "package".to_string());
+            let pkg_id = book.id;
 
-            write_epub(file, book, info, id)
+            write_epub(file, book, info, pkg_id.to_string())
         },
         RichTextOptions {
             ..Default::default()

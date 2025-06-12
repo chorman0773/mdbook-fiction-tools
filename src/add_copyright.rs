@@ -88,13 +88,13 @@ impl Preprocessor for AddCopyrightPreprocessor {
                 .unwrap_or_else(|| Path::new("COPYRIGHT-STUB.md")),
         );
 
-        let stub = std::fs::read_to_string(stub_path).map_err(MdError::new)?;
+        let stub = std::fs::read_to_string(stub_path).ok();
 
         try_for_each_mut(
             &mut |item| {
                 match item {
                     BookItem::Chapter(ch) => {
-                        Self::update_chapter(ch, &config, renderer, root, &stub)?;
+                        Self::update_chapter(ch, &config, renderer, root, stub.as_deref())?;
                     }
                     _ => {}
                 }
@@ -134,7 +134,7 @@ impl AddCopyrightPreprocessor {
         config: &AddCopyrightPreprocessorConfig,
         renderer: &str,
         root: &Path,
-        stub: &str,
+        stub: Option<&str>,
     ) -> MdResult<()> {
         let Some(path) = &ch.path else { return Ok(()) };
 
@@ -152,7 +152,8 @@ impl AddCopyrightPreprocessor {
             | MdParseOptions::ENABLE_HEADING_ATTRIBUTES
             | MdParseOptions::ENABLE_TABLES
             | MdParseOptions::ENABLE_STRIKETHROUGH
-            | MdParseOptions::ENABLE_TASKLISTS;
+            | MdParseOptions::ENABLE_TASKLISTS
+            | MdParseOptions::ENABLE_MATH;
 
         let parser = Parser::new_ext(&ch.content, parse_options);
 
@@ -177,7 +178,10 @@ impl AddCopyrightPreprocessor {
                         );
 
                         if is_included {
-                            let stub_parser = Parser::new_ext(stub, parse_options);
+                            let stub_parser = Parser::new_ext(
+                                stub.ok_or_else(|| MdError::msg("Stub File used but not found"))?,
+                                parse_options,
+                            );
 
                             let events = stub_parser.into_iter().map(|mut m| {
                                 match &mut m {
@@ -251,6 +255,27 @@ impl AddCopyrightPreprocessor {
                             .map_err(MdError::new)?,
                         );
                     }
+                }
+                Event::Start(Tag::Link {
+                    link_type: _,
+                    dest_url,
+                    title,
+                    id,
+                }) => {
+                    state = Some(
+                        cmark_resume_with_options(
+                            core::iter::once(Event::Start(Tag::Link {
+                                link_type: pulldown_cmark::LinkType::Inline,
+                                dest_url,
+                                title,
+                                id,
+                            })),
+                            &mut output,
+                            state.take(),
+                            print_options.clone(),
+                        )
+                        .map_err(MdError::new)?,
+                    );
                 }
                 event => {
                     state = Some(

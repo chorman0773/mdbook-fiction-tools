@@ -1,2 +1,3 @@
 png => "image/png",
 txt => "text/plain",
+svg => "image/svg",
