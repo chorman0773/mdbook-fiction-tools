@@ -63,7 +63,8 @@ pub fn write_inline_node<W: std::io::Write>(node: &InlineXhtml, writer: &mut Eve
             }
         },
         InlineXhtml::Comment(st) => writer.write(XmlEvent::comment(&st)),
-        InlineXhtml::CData(st) => writer.write(XmlEvent::CData(&st)),
+        InlineXhtml::Text(st) => writer.write(XmlEvent::Characters(st)),
+        InlineXhtml::CData(st) => writer.write(XmlEvent::CData(st))
     }
 }
 

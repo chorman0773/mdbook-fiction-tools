@@ -59,7 +59,7 @@ impl<'a> Visitor for MacroVisitor<'a> {
 
                         path.push(self.src_path);
 
-                        if let Some(root) = self.config.macro_defs.get(m.as_str()) {
+                        if let Some(root) = self.config.defs.get(m.as_str()) {
                             path.push(root);
                         } else if let Some(implied) = self.implied_files.get(m.as_str()) {
                             path.push(*implied)
@@ -103,7 +103,7 @@ struct MacrosConfig {
     #[serde(flatten)]
     options: RichTextOptions,
     #[serde(default)]
-    macro_defs: HashMap<String, PathBuf>,
+    defs: HashMap<String, PathBuf>,
     #[serde(flatten)]
     file_spec: FileSpec,
     #[serde(default)]
@@ -157,7 +157,7 @@ fn main() {
 
     let (context, mut input) = parse_input(std::io::stdin()).unwrap();
 
-    let config: MacrosConfig = context.config.get("preprocessor.fiction-macros").unwrap().unwrap_or_default();
+    let config: MacrosConfig = context.config.get("preprocessor.macros").unwrap().unwrap_or_default();
 
     let implied_files = IMPLIED_MACRO_DEFAULT_FILES.iter().copied().map(|(m, p)| (m, Path::new(p))).collect::<HashMap<_, _>>();
 

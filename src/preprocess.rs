@@ -5,7 +5,7 @@ use crate::{bookir::{self, BookChapter, RichText, RichTextOptions, XmlNode}, xht
 use mdbook_core::book::Chapter;
 use pulldown_cmark::{Event, Tag, TagEnd};
 use pulldown_cmark_to_cmark::{Error, Options, State, cmark_resume_with_options};
-use xml::EventWriter;
+use xml::{EmitterConfig, EventWriter};
 
 pub fn write_as_markdown<'a>(fmt: &mut String, rich: &RichText<'a>, state: Option<State<'a>>, options: Options<'a>) -> Result<State<'a>, Error> {
     struct StateBundle<'a, 'b> {
@@ -37,7 +37,7 @@ pub fn write_as_markdown<'a>(fmt: &mut String, rich: &RichText<'a>, state: Optio
         RichText::Comment(_) => state.write([])?,
         RichText::Xhtml(inline_xhtml) => {
             let mut buf = Vec::<u8>::new();
-            xhtml::write_inline_node(inline_xhtml, &mut EventWriter::new(&mut buf)).unwrap();
+            xhtml::write_inline_node(inline_xhtml, &mut EventWriter::new_with_config(&mut buf, EmitterConfig::new().write_document_declaration(false))).unwrap();
             let st = String::from_utf8(buf).unwrap();
 
             state.write([Event::Html(pulldown_cmark::CowStr::Boxed(st.into_boxed_str()))])?;
@@ -322,7 +322,8 @@ impl<'a> RichText<'a> {
                     },
                     bookir::InlineXhtml::Node(XmlNode::Inline(_)) |
                     bookir::InlineXhtml::Comment(_) |
-                    bookir::InlineXhtml::CData(_) => {},
+                    &mut bookir::InlineXhtml::CData(_) |
+                    bookir::InlineXhtml::Text(_) => {},
                 }
             },
             RichText::Stylised(_, inner) => {

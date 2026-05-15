@@ -50,6 +50,7 @@ pub enum InlineXhtml<'a> {
     Node(XmlNode<'a>),
     Comment(CowStr<'a>),
     CData(CowStr<'a>),
+    Text(CowStr<'a>),
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -164,7 +165,7 @@ impl<'a> RichText<'a> {
             *node = Some(XmlNode::Block(elem, core::mem::take(rich)));
         }
         match self {
-            RichText::RawText(text) => InlineXhtml::CData(text.clone()),
+            RichText::RawText(text) => InlineXhtml::Text(text.clone()),
             RichText::Comment(comment) => InlineXhtml::Comment(comment.clone()),
             RichText::Xhtml(xhtml) => {
                 match xhtml {
@@ -180,8 +181,9 @@ impl<'a> RichText<'a> {
 
                         InlineXhtml::Node(node)
                     },
-                    InlineXhtml::Comment(cow_str) |
-                    InlineXhtml::CData(cow_str) => xhtml.clone(),
+                    InlineXhtml::Comment(_) |
+                    InlineXhtml::CData(_) |
+                    InlineXhtml::Text(_) => xhtml.clone(),
                 }
             },
             RichText::Stylised(attributes, rich_texts) => {
