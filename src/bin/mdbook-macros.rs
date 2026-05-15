@@ -11,6 +11,7 @@ struct MacroVisitor<'a> {
     macro_content_cache: HashMap<CowStr<'static>,(&'static str, RichText<'static>)>,
     file: PathBuf,
     root_path: &'a Path,
+    src_path: &'a Path,
     implied_files: &'a HashMap<&'static str, &'static Path>,
 }
 
@@ -55,6 +56,8 @@ impl<'a> Visitor for MacroVisitor<'a> {
                         VisitResult::Update { result: rt.clone(), recurse: true }
                     } else {
                         let mut path = self.root_path.to_path_buf();
+
+                        path.push(self.src_path);
 
                         if let Some(root) = self.config.macro_defs.get(m.as_str()) {
                             path.push(root);
@@ -136,7 +139,7 @@ impl FileSpecTopLevel {
 }
 
 const IMPLIED_MACRO_DEFAULT_FILES: &[(&str, &str)] = &[
-    ("copyright", "COPYRIGHT-STUD.md")
+    ("copyright", "COPYRIGHT-STUB.md")
 ];
 
 fn main() {
@@ -159,7 +162,7 @@ fn main() {
     let implied_files = IMPLIED_MACRO_DEFAULT_FILES.iter().copied().map(|(m, p)| (m, Path::new(p))).collect::<HashMap<_, _>>();
 
 
-    let mut visitor = MacroVisitor { config: &config, output: &context.renderer, macro_content_cache: HashMap::new(), file: PathBuf::new(), root_path: &context.root, implied_files: &implied_files  };
+    let mut visitor = MacroVisitor { config: &config, output: &context.renderer, macro_content_cache: HashMap::new(), file: PathBuf::new(), root_path: &context.root, src_path: &context.config.book.src, implied_files: &implied_files  };
 
     input.for_each_chapter_mut(|c| {
         if let Some(v) = c.source_path.clone() {
