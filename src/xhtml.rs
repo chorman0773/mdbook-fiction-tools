@@ -39,229 +39,31 @@ pub fn write_rich_node<W: std::io::Write>(
     node: &RichText,
     writer: &mut EventWriter<W>,
 ) -> xml::writer::Result<()> {
+    let node = node.to_xhtml();
+    write_inline_node(&node, writer)
+}
+
+pub fn write_inline_node<W: std::io::Write>(node: &InlineXhtml, writer: &mut EventWriter<W>) -> xml::writer::Result<()>{
     match node {
-        RichText::Table(tbl) => {
-            let style = tbl.align.iter().map(|al| match al {
-                Alignment::None => None,
-                Alignment::Left => Some("text-align: left;"),
-                Alignment::Right => Some("text-align: right;"),
-                Alignment::Center => Some("text-align: center;"),
-            });
+        InlineXhtml::Node(node) => {
+            match node {
+                XmlNode::Block(xml_elem, rich_texts) => {
+                    writer.write(xml_elem)?;
 
-            writer.write(XmlEvent::start_element("table"))?;
-
-            if let Some(head) = &tbl.head {
-                writer.write(XmlEvent::start_element("tr"))?;
-                for (style, elem) in style.clone().zip(&head.elems) {
-                    let mut th = XmlEvent::start_element("th");
-                    if let Some(style) = style {
-                        th = th.attr("style", style);
+                    for rich in rich_texts{ 
+                        write_rich_node(rich, writer)?;
                     }
-                    writer.write(th);
-                    write_rich_node(elem, writer)?;
-                    writer.write(XmlEvent::end_element())?;
-                }
-                writer.write(XmlEvent::end_element())?;
-            }
 
-            for row in &tbl.body {
-                writer.write(XmlEvent::start_element("tr"))?;
-                for (style, elem) in style.clone().zip(&row.elems) {
-                    let mut td = XmlEvent::start_element("td");
-                    if let Some(style) = style {
-                        td = td.attr("style", style);
-                    }
-                    writer.write(td);
-                    write_rich_node(elem, writer)?;
-                    writer.write(XmlEvent::end_element())?;
-                }
-                writer.write(XmlEvent::end_element())?;
-            }
-
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::RawText(cow_str) => writer.write(XmlEvent::characters(cow_str)),
-        RichText::Xhtml(inline_xhtml) => match inline_xhtml {
-            InlineXhtml::CData(cdata) => writer.write(XmlEvent::cdata(cdata)),
-            InlineXhtml::Comment(comment) => writer.write(XmlEvent::comment(comment)),
-            InlineXhtml::Node(XmlNode::Block(elem_event, content)) => {
-                writer.write(elem_event)?;
-                for elem in content {
-                    write_rich_node(elem, writer)?;
-                }
-                writer.write(XmlEvent::end_element())
-            }
-            InlineXhtml::Node(XmlNode::Inline(elem_event)) => {
-                writer.write(elem_event)?;
-                writer.write(XmlEvent::end_element())
+                    writer.write(XmlEvent::end_element())
+                },
+                XmlNode::Inline(xml_elem) => {
+                    writer.write(xml_elem)?;
+                    writer.write(XmlEvent::end_element())
+                },
             }
         },
-        RichText::Stylised(attributes, elems) => {
-            let mut steps = 0;
-
-            if attributes.strikethrough {
-                steps += 1;
-                writer.write(XmlEvent::start_element("s"))?;
-            }
-            if attributes.underline {
-                steps += 1;
-                writer.write(XmlEvent::start_element("u"))?;
-            }
-            if attributes.bold {
-                steps += 1;
-                writer.write(XmlEvent::start_element("b"))?;
-            }
-            if attributes.italics {
-                steps += 1;
-                writer.write(XmlEvent::start_element("i"))?;
-            }
-
-            for elem in elems {
-                write_rich_node(elem, writer)?;
-            }
-
-            for _ in 0..steps {
-                writer.write(XmlEvent::end_element())?;
-            }
-            Ok(())
-        }
-        RichText::Paragraph(elems) => {
-            writer.write(XmlEvent::start_element("p"))?;
-            for elem in elems {
-                write_rich_node(elem, writer)?;
-            }
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::InlineCode(code) => {
-            writer.write(XmlEvent::start_element("code"))?;
-            writer.write(XmlEvent::cdata(code))?;
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::CodeBlock(code) => {
-            writer.write(
-                XmlEvent::start_element("div")
-                    .attr("style", "font-family:monospace;background-color: #c9c9c9;"),
-            )?;
-            writer.write(XmlEvent::cdata(&code.content))?;
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::InternalLink(link) => match link {
-            Link::Text {
-                title: _,
-                elems,
-                dest_url,
-            } => {
-                let link = if let Some(prefix) = dest_url.strip_suffix(".md") {
-                    CowStr::from(format!("{prefix}.xhtml"))
-                } else {
-                    dest_url.into()
-                };
-
-                writer.write(XmlEvent::start_element("a").attr("href", &link))?;
-                for elem in elems {
-                    write_rich_node(elem, writer)?;
-                }
-                writer.write(XmlEvent::end_element())
-            }
-            Link::Footnote(id) => todo!(),
-        },
-        RichText::ExternalLink(link) => match link {
-            Link::Text {
-                title: _,
-                elems,
-                dest_url,
-            } => {
-                let link = dest_url.clone();
-
-                writer.write(XmlEvent::start_element("a").attr("href", &link))?;
-                for elem in elems {
-                    write_rich_node(elem, writer)?;
-                }
-                writer.write(XmlEvent::end_element())
-            }
-            Link::Footnote(id) => unreachable!("External Link to a footnote not possible"),
-        },
-        RichText::InternalImage(link) | RichText::ExternalImage(link) => match link {
-            Link::Text {
-                title: _,
-                elems,
-                dest_url,
-            } => {
-                let link = dest_url.clone();
-
-                let mut alt = String::new();
-
-                for elem in elems {
-                    match elem {
-                        RichText::RawText(raw) => alt.push_str(raw),
-                        r => panic!("Can't include non-raw alt text in an image {r:?}"),
-                    }
-                }
-
-                writer.write(
-                    XmlEvent::start_element("img")
-                        .attr("src", &link)
-                        .attr("alt", &alt),
-                )?;
-                for elem in elems {
-                    write_rich_node(elem, writer)?;
-                }
-                writer.write(XmlEvent::end_element())
-            }
-            Link::Footnote(id) => unreachable!("External Link to a footnote not possible"),
-        },
-        RichText::Heading(heading) => {
-            let start = match heading.level {
-                HeadingLevel::H1 => XmlEvent::start_element("h1"),
-                HeadingLevel::H2 => XmlEvent::start_element("h2"),
-                HeadingLevel::H3 => XmlEvent::start_element("h3"),
-                HeadingLevel::H4 => XmlEvent::start_element("h4"),
-                HeadingLevel::H5 => XmlEvent::start_element("h5"),
-                HeadingLevel::H6 => XmlEvent::start_element("h6"),
-            };
-
-            writer.write(start.attr("id", &heading.id))?;
-            writer.write(XmlEvent::characters(&heading.text))?;
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::TextBreak(break_type) => match break_type {
-            crate::bookir::BreakType::Rule => {
-                writer.write(XmlEvent::start_element("hr"))?;
-                writer.write(XmlEvent::end_element())
-            }
-            crate::bookir::BreakType::SoftLine | crate::bookir::BreakType::HardLine => {
-                writer.write(XmlEvent::start_element("br"))?;
-                writer.write(XmlEvent::end_element())
-            }
-        },
-        RichText::List(list) => {
-            match list.list_style {
-                ListStyle::Ordered(n) => {
-                    writer.write(XmlEvent::start_element("ol").attr("start", &format!("{n}")))?
-                }
-                ListStyle::Unordered => writer.write(XmlEvent::start_element("ul"))?,
-            }
-
-            for item in &list.elems {
-                writer.write(XmlEvent::start_element("li"))?;
-                for elem in &item.0 {
-                    write_rich_node(elem, writer)?;
-                }
-                writer.write(XmlEvent::end_element())?;
-            }
-            writer.write(XmlEvent::end_element())
-        }
-        RichText::BlockQuote(vec) => {
-            writer.write(XmlEvent::start_element("bq"))?;
-            for elem in vec {
-                write_rich_node(elem, writer)?;
-            }
-            writer.write(XmlEvent::end_element())
-        }
-        #[cfg(feature = "math")]
-        RichText::MathBlock(_) => todo!(),
-        #[cfg(feature = "math")]
-        RichText::InlineMath(_) => todo!(),
+        InlineXhtml::Comment(st) => writer.write(XmlEvent::comment(&st)),
+        InlineXhtml::CData(st) => writer.write(XmlEvent::CData(&st)),
     }
 }
 

@@ -5,8 +5,92 @@ use std::{
     ops::Deref,
 };
 
-pub use pulldown_cmark::InlineStr;
+
 use serde::de::DeserializeSeed;
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+enum InlineStrLen {
+    _0,
+    _1,
+    _2,
+    _3,
+    _4,
+    _5,
+    _6,
+    _7,
+    _8,
+    _9,
+    _10,
+    _11,
+    _12,
+    _13,
+    _14,
+    _15,
+    _16,
+    _17,
+    _18,
+    _19,
+    _20,
+    _21,
+    _22,
+    _23,
+}
+
+const MAX_LEGAL_LEN: usize = (InlineStrLen::_23 as usize) + 1;
+
+const MAX_TOTAL_INLINE_STR_LEN: usize = core::mem::size_of::<&'static str>() + core::mem::align_of::<usize>();
+
+#[derive(Copy, Clone)]
+pub struct InlineStr {
+    _align: [usize;0],
+    len: InlineStrLen,
+    body: [u8; MAX_TOTAL_INLINE_STR_LEN - 1],
+}
+
+impl InlineStr {
+    pub const fn from_str(st: &str) -> Option<InlineStr> {
+        let len = st.len();
+
+        if len < const {
+            if MAX_LEGAL_LEN < MAX_TOTAL_INLINE_STR_LEN {
+                MAX_LEGAL_LEN
+            } else {
+                MAX_TOTAL_INLINE_STR_LEN
+            }
+        } {
+            let bytes = st.as_bytes();
+            let len = unsafe { core::mem::transmute(len as u8)};
+
+            let mut str = InlineStr{_align: [], len, body: [0; _]};
+
+            let mut i = 0;
+
+            while i < (len as usize) {
+                str.body[i] = bytes[i];
+                i += 1;
+            }
+
+            Some(str)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        let len = self.len as usize;
+
+        unsafe { core::str::from_utf8_unchecked(self.body.get_unchecked(..len))}        
+    }
+}
+
+impl Deref for InlineStr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
 
 #[derive(Clone)]
 pub enum CowStr<'a> {
@@ -46,9 +130,32 @@ impl<'a> CowStr<'a> {
         match self {
             Self::Boxed(bx) => CowStr::Boxed(bx),
             Self::Inline(inl) => CowStr::Inline(inl),
-            Self::Borrowed(br) => match InlineStr::try_from(br) {
-                Ok(inl) => CowStr::Inline(inl),
-                Err(_) => CowStr::Boxed(br.into()),
+            Self::Borrowed(br) => match InlineStr::from_str(br) {
+                Some(inl) => CowStr::Inline(inl),
+                None => CowStr::Boxed(br.into()),
+            },
+        }
+    }
+}
+
+impl<'a> From<CowStr<'a>> for String {
+    fn from(value: CowStr<'a>) -> Self {
+        match value {
+            CowStr::Boxed(st) => st.into_string(),
+            CowStr::Borrowed(st) => st.to_string(),
+            CowStr::Inline(st) => st.as_str().to_string(),
+        }
+    }
+}
+
+impl<'a> From<CowStr<'a>> for pulldown_cmark::CowStr<'a> {
+    fn from(value: CowStr<'a>) -> Self {
+        match value {
+            CowStr::Boxed(val) => Self::Boxed(val),
+            CowStr::Borrowed(val) => Self::Borrowed(val),
+            CowStr::Inline(val) => match pulldown_cmark::InlineStr::try_from(&*val) {
+                Ok(inl) => Self::Inlined(inl),
+                Err(_) => Self::Boxed(Box::from(val.as_str())),
             },
         }
     }
@@ -96,9 +203,9 @@ impl<'a> Ord for CowStr<'a> {
 
 impl From<String> for CowStr<'_> {
     fn from(value: String) -> Self {
-        match InlineStr::try_from(&*value) {
-            Ok(val) => Self::Inline(val),
-            Err(_) => Self::Boxed(value.into_boxed_str()),
+        match InlineStr::from_str(&*value) {
+            Some(val) => Self::Inline(val),
+            None => Self::Boxed(value.into_boxed_str()),
         }
     }
 }
@@ -114,7 +221,13 @@ impl<'a> From<pulldown_cmark::CowStr<'a>> for CowStr<'a> {
         match value {
             pulldown_cmark::CowStr::Boxed(bx) => Self::Boxed(bx),
             pulldown_cmark::CowStr::Borrowed(br) => Self::Borrowed(br),
-            pulldown_cmark::CowStr::Inlined(inl) => Self::Inline(inl),
+            pulldown_cmark::CowStr::Inlined(inl) => {
+                let st = &*inl;
+                match InlineStr::from_str(st) {
+                    Some(inl) => Self::Inline(inl),
+                    None => Self::Boxed(Box::from(st))
+                }
+            },
         }
     }
 }

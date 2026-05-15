@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use mdbook::BookItem;
+use mdbook_core::book::BookItem;
 
 pub fn name_to_id(mut x: &str) -> String {
     if let Some((l, r)) = x.split_once('{') {

@@ -8,6 +8,12 @@ pub struct XmlElem {
     pub attrs: IndexMap<String, String>,
 }
 
+impl XmlElem {
+    pub fn simple<S: Into<String>>(name: S) -> XmlElem {
+        XmlElem { name: name.into(), attrs: IndexMap::new() }
+    }
+}
+
 impl<'a> From<&'a XmlElem> for XmlEvent<'a> {
     fn from(value: &'a XmlElem) -> Self {
         XmlEvent::StartElement {

@@ -210,6 +210,7 @@ pub struct SharedConfig {
     #[cfg(feature = "math")]
     pub math_support: bool,
     #[doc(hidden)]
+    #[serde(skip)]
     pub __non_exhaustive: (),
 }
 

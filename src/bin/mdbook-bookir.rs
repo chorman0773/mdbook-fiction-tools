@@ -1,6 +1,6 @@
-use mdbook::renderer::RenderContext;
+use mdbook_renderer::RenderContext;
 use mdbook_fiction_tools::{
-    bookir::RichTextOptions, config::BasicConfig, gen_collected_output, helpers, Output,
+    bookir::RichTextOptions, config::BasicConfig, renderer::gen_collected_output, helpers, Output,
 };
 use serde_json::Error;
 use std::{fs, io};

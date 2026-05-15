@@ -2,7 +2,7 @@ use std::borrow::{Borrow, Cow};
 use std::path::PathBuf;
 use std::thread::current;
 
-use mdbook::BookItem;
+use mdbook_core::book::BookItem;
 use serde::{Deserialize, Serialize};
 use xml::name::Name;
 use xml::namespace::Namespace;

@@ -1,4 +1,4 @@
-use mdbook::renderer::RenderContext;
+use mdbook_renderer::RenderContext;
 use mdbook_fiction_tools::{
     bookir::RichTextOptions,
     epub::{
@@ -6,7 +6,7 @@ use mdbook_fiction_tools::{
         info::EpubFileInfo,
         write_epub,
     },
-    gen_collected_output, helpers, Output,
+    renderer::gen_collected_output, helpers, Output,
 };
 use std::{fs, io};
 use uuid::Uuid;

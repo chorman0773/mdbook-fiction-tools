@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mdbook = { version = "0.4.43", default-features = false }
 pulldown-cmark = "0.12"
-pulldown-cmark-to-cmark = "20.0.0"
+pulldown-cmark-to-cmark = { version = "20.0.0", optional = true}
 serde_json = "1.0"
 toml = "0.8.10"
 serde = "1.0.197"
@@ -21,13 +20,18 @@ ring = { version = "0.17.8", optional = true }
 indexmap = { version = "2.7.0", features = ["serde"] }
 krilla = { version = "0.3.0", optional = true }
 pulldown-latex = { version = "0.7.1", optional = true }
+mdbook-renderer = { version = "0.5.2", optional = true }
+mdbook-preprocessor = { version = "0.5.2", optional = true }
+mdbook-core = "0.5.2"
 
 [features]
 # math = ["dep:pulldown-latex"]
-epub = ["xhtml", "dep:zip"]
+epub = ["dep:zip", "renderer"]
 epub-signatures = ["epub", "dep:ring"]
-pdf = ["dep:krilla"]
-xhtml = []
+pdf = ["dep:krilla", "renderer"]
+preprocessor = ["dep:mdbook-preprocessor", "dep:pulldown-cmark-to-cmark"]
+renderer = ["dep:mdbook-renderer"]
+default = ["preprocessor", "renderer"]
 
 [[bin]]
 name = "mdbook-epub-fancy"
@@ -36,6 +40,14 @@ required-features = ["epub"]
 [[bin]]
 name = "mdbook-pdf-fancy"
 required-features = ["pdf"]
+
+[[bin]]
+name = "mdbook-bookir"
+required-features = ["renderer"]
+
+[[bin]]
+name = "mdbook-macros"
+required-features = ["preprocessor"]
 
 [dev-dependencies]
 paste = "1.0.15"

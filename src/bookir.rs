@@ -8,15 +8,16 @@ use std::{
     process::Command,
 };
 
+use indexmap::IndexMap;
 use ::xml::{name::Name, reader::XmlEvent, EventReader};
-use mdbook::{book::BookItems, BookItem};
+use mdbook_core::{book::{BookItems, BookItem}, };
 use nav::NavTree;
 use pulldown_cmark::{
     CodeBlockKind, Event, HeadingLevel as MdHeadingLevel, InlineStr, LinkType, Parser, Tag, TagEnd,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::helpers;
+use crate::helpers::{self, name_to_id};
 
 #[cfg(feature = "math")]
 pub mod math;
@@ -52,6 +53,7 @@ pub enum InlineXhtml<'a> {
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Attributes {
     pub bold: bool,
     pub italics: bool,
@@ -59,6 +61,7 @@ pub struct Attributes {
     pub strikethrough: bool,
 
     #[doc(hidden)]
+    #[serde(skip)]
     pub __non_exhaustive: (),
 }
 
@@ -70,6 +73,21 @@ pub enum Link<'a> {
         dest_url: CowStr<'a>,
     },
     Footnote(CowStr<'a>),
+}
+
+impl<'a> Link<'a> {
+    fn to_linkref(&self) -> (Vec<RichText<'a>>, CowStr<'a>) {
+        match self {
+            Link::Text { elems, dest_url, .. } => {
+                (elems.clone(), dest_url.clone())
+            },
+            Link::Footnote(fnref) => {
+                let id = format!("#fn-{}", name_to_id(fnref));
+
+                (vec![RichText::RawText(fnref.clone())], CowStr::Boxed(id.into_boxed_str()))
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +112,7 @@ pub struct TableRow<'a> {
 #[non_exhaustive]
 pub enum RichText<'a> {
     RawText(CowStr<'a>),
+    Comment(CowStr<'a>),
     Xhtml(InlineXhtml<'a>),
     Stylised(Attributes, Vec<RichText<'a>>),
     Paragraph(Vec<RichText<'a>>),
@@ -112,6 +131,328 @@ pub enum RichText<'a> {
     MathBlock(math::Math<'a>),
     #[cfg(feature = "math")]
     InlineMath(math::Math<'a>),
+    Macro(CowStr<'a>),
+}
+
+// Implementation detail of `normalize`
+enum NormalizationResult {
+    Simple,
+    Link,
+    List,
+    Complex,
+    Html,
+}
+
+impl<'a> RichText<'a> {
+    /// Normalizes [`RichText`] so that it can be emitted as markdown
+    pub fn normalize(&mut self) {
+        match self.normalize_inner() {
+            NormalizationResult::Html => {
+                *self = RichText::Xhtml(self.to_xhtml());
+            }
+            _ => {}
+        }
+    }
+
+    /// Converts a [`RichText`] node to [`InlineXhtml`] that only contains xhtml nodes (and raw text)
+    pub fn to_xhtml(&self) -> InlineXhtml<'a> {
+        fn push_recurse_node<'a>(node: &mut Option<XmlNode<'a>>, rich: &mut Vec<RichText<'a>>, elem: XmlElem) {
+            if let Some(node) = node.take() {
+                rich.push(RichText::Xhtml(InlineXhtml::Node(node)));
+            }
+
+            *node = Some(XmlNode::Block(elem, core::mem::take(rich)));
+        }
+        match self {
+            RichText::RawText(text) => InlineXhtml::CData(text.clone()),
+            RichText::Comment(comment) => InlineXhtml::Comment(comment.clone()),
+            RichText::Xhtml(xhtml) => {
+                match xhtml {
+                    InlineXhtml::Node(node) => {
+                        let node = match node {
+                            XmlNode::Block(elem, rich_texts) => {
+                                let rich = rich_texts.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect();
+
+                                XmlNode::Block(elem.clone(), rich)
+                            },
+                            XmlNode::Inline(elem) => XmlNode::Inline(elem.clone()),
+                        };
+
+                        InlineXhtml::Node(node)
+                    },
+                    InlineXhtml::Comment(cow_str) |
+                    InlineXhtml::CData(cow_str) => xhtml.clone(),
+                }
+            },
+            RichText::Stylised(attributes, rich_texts) => {
+                let mut rich = rich_texts.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect::<Vec<_>>();
+
+                let mut node = None;
+
+                if attributes.bold {
+                    push_recurse_node(&mut node, &mut rich, XmlElem::simple("b"));
+                }
+
+                if attributes.italics {
+                    push_recurse_node(&mut node, &mut rich, XmlElem::simple("i"));
+                }
+
+                if attributes.strikethrough {
+                    push_recurse_node(&mut node, &mut rich, XmlElem::simple("s"));
+                }
+
+                if attributes.underline {
+                    push_recurse_node(&mut node, &mut rich, XmlElem::simple("u"));
+                }
+
+                let node = node.expect("At least one attribute must be present");
+
+                InlineXhtml::Node(node)
+            },
+            RichText::Paragraph(elems) => {
+                let rich = elems.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect::<Vec<_>>();
+                let node = XmlNode::Block(XmlElem::simple("p"), rich);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::InlineCode(cow_str) => {
+                let text = vec![RichText::RawText(cow_str.clone())];
+
+                let node = XmlNode::Block(XmlElem::simple("code"), text);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::CodeBlock(code_block) => {
+                let class = if code_block.lang.is_empty() {
+                    "code-block".to_string()
+                } else {
+                    format!("code-block code-{lang}", lang = name_to_id(&code_block.lang))
+                };
+
+                let text = vec![RichText::RawText(code_block.content.clone())];
+
+                let mut elem = XmlElem::simple("div");
+                elem.attrs.insert("class".to_string(), class);
+
+                let node = XmlNode::Block(elem, text);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::BlockQuote(elems) => {
+                let rich = elems.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect::<Vec<_>>();
+                let node = XmlNode::Block(XmlElem::simple("bq"), rich);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::InternalLink(link) |
+            RichText::ExternalLink(link) => {
+                let (text, dest) = link.to_linkref();
+
+                let text = text.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect::<Vec<_>>();
+
+                let mut elem = XmlElem::simple("a");
+                elem.attrs.insert("href".to_string(), dest.into());
+
+                let node = XmlNode::Block(elem, text);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::InternalImage(link) |
+            RichText::ExternalImage(link) => {
+                let (text, dest) = link.to_linkref();
+
+                let text = text.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect::<Vec<_>>();
+
+                let mut elem = XmlElem::simple("img");
+                elem.attrs.insert("src".to_string(), dest.into());
+
+                let node = XmlNode::Block(elem, text);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::Heading(heading) => {
+                let level = match heading.level {
+                    HeadingLevel::H1 => "h1",
+                    HeadingLevel::H2 => "h2",
+                    HeadingLevel::H3 => "h3",
+                    HeadingLevel::H4 => "h4",
+                    HeadingLevel::H5 => "h5",
+                    HeadingLevel::H6 => "h6",
+                };
+
+                let mut elem = XmlElem::simple(level);
+
+                elem.attrs.insert("id".to_string(), heading.id.clone().into());
+
+                let text = vec![RichText::RawText(heading.text.clone())];
+
+                let node = XmlNode::Block(elem, text);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::TextBreak(break_type) => {
+                let br = match break_type {
+                    BreakType::Rule => "hr",
+                    BreakType::SoftLine |
+                    BreakType::HardLine => "br",
+                };
+
+                let elem = XmlElem::simple(br);
+
+                InlineXhtml::Node(XmlNode::Inline(elem))
+            },
+            RichText::List(list) => {
+                let root_elem = match list.list_style {
+                    ListStyle::Unordered => XmlElem::simple("ul"),
+                    ListStyle::Ordered(start) => {
+                        let mut elem = XmlElem::simple("ol");
+
+                        if start != 1 {
+                            elem.attrs.insert("start".to_string(), format!("{start}"));
+                        }
+
+                        elem
+                    },
+                };
+
+                let rich = list.elems.iter().map(|v| {
+                    let rich = v.0.iter().map(|v| v.to_xhtml()).map(RichText::Xhtml).collect();
+
+                    let elem = XmlElem::simple("li");
+
+                    XmlNode::Block(elem, rich)
+                })
+                .map(InlineXhtml::Node)
+                .map(RichText::Xhtml)
+                .collect();
+
+                let node = XmlNode::Block(root_elem, rich);
+
+                InlineXhtml::Node(node)
+            },
+            RichText::Table(table) => todo!(),
+            RichText::Macro(macro_name) => InlineXhtml::Comment(macro_name.clone()), // Macros need special support, so just emit a comment for now
+        }
+    }
+
+    fn normalize_inner(&mut self) -> NormalizationResult {
+        match self {
+            RichText::RawText(_) | RichText::InlineCode(_) | RichText::Comment(_) => NormalizationResult::Simple,
+            RichText::Xhtml(_) => {
+                NormalizationResult::Html
+            }, // TODO: We can convert some xhtml back into RichText
+            RichText::Stylised(attributes, rich_texts) => {
+                match &mut **rich_texts {
+                    [single] => {
+                        match single.normalize_inner() {
+                            NormalizationResult::Simple => {
+                                match single {
+                                    RichText::Stylised(inner_attributes, inner_rich) => {
+                                        attributes.bold |= inner_attributes.bold;
+                                        attributes.italics |= inner_attributes.italics;
+                                        attributes.strikethrough |= inner_attributes.strikethrough;
+                                        attributes.underline |= inner_attributes.underline;
+                                        *rich_texts = core::mem::take(inner_rich);
+                                        
+                                    },
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    a => {
+                        for elem in rich_texts {
+                            match elem.normalize_inner() {
+                                NormalizationResult::Simple | NormalizationResult::Link => {},
+                                
+                                NormalizationResult::List |
+                                NormalizationResult::Complex |
+                                NormalizationResult::Html => {
+                                    return NormalizationResult::Html
+                                },
+                            }
+                        }
+                    }
+                }
+                NormalizationResult::Simple
+            },
+            RichText::Paragraph(rich_texts) => {
+                for text in rich_texts {
+                    match text.normalize_inner() {
+                        NormalizationResult::Simple | NormalizationResult::Complex | NormalizationResult::Link | NormalizationResult::List => {}
+                        NormalizationResult::Html => {
+                            *text = RichText::Xhtml(text.to_xhtml());
+                        }
+                    }
+                }
+                NormalizationResult::Complex
+            },
+            
+            RichText::BlockQuote(rich_texts) => {
+                for text in rich_texts {
+                    match text.normalize_inner() {
+                        NormalizationResult::Simple | NormalizationResult::Complex | NormalizationResult::Link | NormalizationResult::List => {}
+                        NormalizationResult::Html => {
+                            *text = RichText::Xhtml(text.to_xhtml());
+                        }
+                    }
+                }
+                NormalizationResult::Complex
+            },
+            RichText::InternalLink(link) |
+            RichText::ExternalLink(link) |
+            RichText::InternalImage(link) |
+            RichText::ExternalImage(link) => {
+                match link {
+                    Link::Text { elems, .. } => {
+                        for elem in elems {
+                            match elem.normalize_inner() {
+                                NormalizationResult::Simple | NormalizationResult::Link => {}
+                                NormalizationResult::Complex |
+                                NormalizationResult::List |
+                                NormalizationResult::Html => return NormalizationResult::Html,
+                            }
+                        }
+                        NormalizationResult::Link
+                    },
+                    Link::Footnote(cow_str) => NormalizationResult::Link,
+                }
+            },
+            
+            
+            RichText::List(list) => {
+                for elem in &mut list.elems {
+                    for rich in &mut elem.0 {
+                        match rich.normalize_inner() {
+                            NormalizationResult::Simple | NormalizationResult::Link | NormalizationResult::List => {}
+                            NormalizationResult::Complex | NormalizationResult::Html => return NormalizationResult::Html
+                        }
+                    }
+                }
+
+                NormalizationResult::List
+            },
+            
+            RichText::Table(table) => {
+                for row in table.head.iter_mut().chain(&mut table.body){
+                    for elem in &mut row.elems {
+                        match elem.normalize_inner() {
+                            NormalizationResult::Simple | NormalizationResult::Link => {}
+                            NormalizationResult::List| NormalizationResult::Complex | NormalizationResult::Html => return NormalizationResult::Html
+                        }
+                    }
+                }
+                NormalizationResult::Complex
+            },
+            RichText::Heading(_) |
+            RichText::CodeBlock(_) |
+            RichText::TextBreak(_) => NormalizationResult::Complex,
+            RichText::Macro(name) => {
+                NormalizationResult::Simple
+            },
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,8 +495,10 @@ pub enum HeadingLevel {
     H6,
 }
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct RichTextOptions {
+    #[cfg_attr(not(feature = "math"), serde(skip))]
     pub math: bool,
 
     #[doc(hidden)]
@@ -189,7 +532,15 @@ impl<'a> RichTextParser<'a> {
     fn next_primitive(&mut self) -> Option<Result<RichText<'a>, Event<'a>>> {
         Some(match self.0.next()? {
             e @ (Event::Start(_) | Event::End(_)) => Err(e),
-            Event::Text(text) => Ok(RichText::RawText(text.into())),
+            Event::Text(text) => {
+                if let Some(next) =  text.trim().strip_prefix("!{#").and_then(|s| s.strip_suffix("}")) {
+                    let name = CowStr::Borrowed(next.trim()).into_static();
+
+                    Ok(RichText::Macro(name))
+                } else {
+                    Ok(RichText::RawText(text.into()))
+                }
+            },
             Event::Code(code) => Ok(RichText::InlineCode(code.into())),
             #[cfg(feature = "math")]
             Event::InlineMath(tex) => todo!("latex {tex}"),
@@ -469,10 +820,11 @@ pub struct BookChapter<'a> {
     pub src_path: Cow<'a, Path>,
     pub dest_path: Cow<'a, Path>,
     pub content: Vec<RichText<'a>>,
+    pub dirty: bool,
 }
 
 impl<'a> BookChapter<'a> {
-    pub fn from_chapter(ch: &'a mdbook::book::Chapter, opts: RichTextOptions) -> Option<Self> {
+    pub fn from_chapter(ch: &'a mdbook_core::book::Chapter, opts: RichTextOptions) -> Option<Self> {
         let src_path = ch.source_path.as_ref()?;
         let dest_path = ch.path.as_ref()?;
         let content = RichTextParser::new(&ch.content, opts).collect();
@@ -481,6 +833,7 @@ impl<'a> BookChapter<'a> {
             src_path: Cow::Borrowed(src_path),
             dest_path: Cow::Borrowed(dest_path),
             content,
+            dirty: false,
         })
     }
 }

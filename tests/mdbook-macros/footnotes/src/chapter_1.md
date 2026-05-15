@@ -2,4 +2,6 @@
 
 [foo] bar.
 
+!{#copyright}
+
 [foo]: https://example.org

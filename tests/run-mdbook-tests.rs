@@ -1,4 +1,4 @@
-#![feature(exit_status_error, os_str_display)]
+#![feature(exit_status_error)]
 
 use std::process::Command;
 
@@ -33,5 +33,5 @@ build_test_fn! {
     #[cfg(feature = "epub")]
     test output epub-fancy;
 
-    test preprocessor add-copyright;
+    test preprocessor macros;
 }

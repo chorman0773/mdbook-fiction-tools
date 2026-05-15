@@ -1,7 +1,7 @@
-use mdbook::renderer::RenderContext;
+use mdbook_renderer::RenderContext;
 use mdbook_fiction_tools::{
     bookir::RichTextOptions,
-    gen_collected_output, helpers,
+    renderer::gen_collected_output, helpers,
     pdf::{config::PdfConfig, write_pdf},
     Output,
 };
